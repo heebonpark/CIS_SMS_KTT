@@ -121,7 +121,7 @@ REG_DELAY_TAB = 0.1
 #  관리자 설정 (base64)
 # =========================================================
 def load_admin_config():
-    defaults = {"user_password":"0303","expire_date":"","expire_message":"사용 기간이 만료되었습니다.\n관리자에게 문의하세요.","created":datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    defaults = {"user_password":"0303","expire_date":"","expire_message":"사용 기간이 만료되었습니다.\n관리자에게 문의하세요.","created":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"discord_webhook":""}
     if not os.path.exists(ADMIN_CONFIG):
         save_admin_config(defaults); return defaults
     try:
@@ -148,12 +148,40 @@ def get_user_info():
     except: user=os.environ.get("USERNAME",os.environ.get("USER","UNKNOWN"))
     return pc,user
 
+def send_discord_message(webhook_url, content):
+    if not webhook_url:
+        return
+    def worker():
+        try:
+            import urllib.request
+            import json
+            data = {"content": content}
+            req = urllib.request.Request(
+                webhook_url,
+                data=json.dumps(data).encode("utf-8"),
+                headers={"Content-Type": "application/json", "User-Agent": "urllib-discord-bot"}
+            )
+            with urllib.request.urlopen(req) as response:
+                pass
+        except Exception:
+            pass
+    threading.Thread(target=worker, daemon=True).start()
+
 def write_usage_log(action,detail=""):
     try:
         pc,user=get_user_info()
         now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{now}] PC:{pc} | 사용자:{user} | {action}" + (f" | {detail}" if detail else "")
         with open(USAGE_LOG_FILE,"a",encoding="utf-8") as f:
-            f.write(f"[{now}] PC:{pc} | 사용자:{user} | {action}" + (f" | {detail}" if detail else "") + "\n")
+            f.write(log_line + "\n")
+            
+        cfg = load_admin_config()
+        webhook_url = cfg.get("discord_webhook", "").strip()
+        if webhook_url:
+            discord_msg = f"📢 **[사용자 모니터링]**\n• **시간**: `{now}`\n• **PC/사용자**: `{pc} / {user}`\n• **작업**: `{action}`"
+            if detail:
+                discord_msg += f"\n• **상세**: `{detail}`"
+            send_discord_message(webhook_url, discord_msg)
     except: pass
 
 def check_expiration(cfg):
@@ -731,8 +759,8 @@ def open_admin_panel():
     write_usage_log("관리자 패널")
     cfg=load_admin_config()
     
-    # Admin Toplevel Window
-    win=tk.Toplevel(root); win.title("🔧 관리자 설정"); win.geometry("560x600"); win.configure(bg=COLOR_NAVY)
+    # Admin Toplevel Window (크기를 560x700으로 세로 확장)
+    win=tk.Toplevel(root); win.title("🔧 관리자 설정"); win.geometry("560x700"); win.configure(bg=COLOR_NAVY)
     win.attributes("-topmost",True); win.resizable(False,False)
     
     tk.Label(win,text="🔧 관리자 설정 패널",font=FONT_TITLE,bg=COLOR_NAVY,fg="white",pady=15).pack(fill=tk.X)
@@ -748,8 +776,13 @@ def open_admin_panel():
     tk.Entry(bd,textvariable=ev,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(anchor="w",pady=(0,15))
     
     tk.Label(bd,text="💬 사용 기간 만료 안내 메시지",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
-    mt=tk.Text(bd,height=4,font=FONT_REG_10,bd=1,relief="solid"); mt.pack(fill=tk.X,pady=(0,15))
+    mt=tk.Text(bd,height=3,font=FONT_REG_10,bd=1,relief="solid"); mt.pack(fill=tk.X,pady=(0,15))
     mt.insert(tk.END,cfg.get("expire_message",""))
+    
+    # 디스코드 웹훅 입력 필드 추가
+    tk.Label(bd,text="📢 디스코드 실시간 알림 웹훅 URL",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
+    dv=tk.StringVar(value=cfg.get("discord_webhook",""))
+    tk.Entry(bd,textvariable=dv,font=FONT_REG_10,width=50,bd=1,relief="solid").pack(anchor="w",pady=(0,15))
     
     tk.Label(bd,text="📊 프로그램 사용 이력 모니터링",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w",pady=(5,5))
     bf=tk.Frame(bd,bg="#f8fafc"); bf.pack(fill=tk.X, pady=(0,15))
@@ -774,6 +807,7 @@ def open_admin_panel():
             try: datetime.strptime(ne,"%Y-%m-%d")
             except: messagebox.showerror("형식 오류","만료일은 YYYY-MM-DD 형식으로 입력하세요."); return
         nc={"user_password":pv.get().strip() or "0303","expire_date":ne,"expire_message":mt.get("1.0",tk.END).strip(),
+            "discord_webhook":dv.get().strip(),
             "created":cfg.get("created",""),"last_modified":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"modified_by":f"{pc}/{user}"}
         save_admin_config(nc); write_usage_log("설정변경",f"만료={ne or '없음'}")
         messagebox.showinfo("저장","관리자 설정이 저장되었습니다."); win.destroy()
