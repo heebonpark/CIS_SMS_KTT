@@ -933,7 +933,7 @@ def create_gui():
     btn_resume=create_btn(ct, "▶ 재개", lambda:set_pause_state(False), "#06b6d4", "#0891b2", font=FONT_BOLD_10, state=tk.DISABLED)
     btn_resume.pack(side=tk.LEFT,padx=2)
     
-    btn_stop=create_btn(ct, "⏹ 중지", stop_run, COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10, state=tk.DISABLED)
+    btn_stop=create_btn(ct, "⏹ 중지", lambda:stop_run(), COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10, state=tk.DISABLED)
     btn_stop.pack(side=tk.LEFT,padx=2)
     
     tk.Frame(ct,width=10,bg=BG_MAIN).pack(side=tk.LEFT)
