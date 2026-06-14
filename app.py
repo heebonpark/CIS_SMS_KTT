@@ -169,7 +169,8 @@ macro_config = load_macro_config()
 #  관리자 설정 (base64)
 # =========================================================
 def load_admin_config():
-    defaults = {"user_password":"0303","expire_date":"","expire_message":"사용 기간이 만료되었습니다.\n관리자에게 문의하세요.","created":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"discord_webhook":"","remote_password_url":""}
+    defaults = {"user_password":"0303","expire_date":"","expire_message":"사용 기간이 만료되었습니다.\n관리자에게 문의하세요.","created":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"discord_webhook":"","remote_password_url":"",
+                "payment_bank":"","payment_account":"","payment_holder":"","payment_card_url":"","payment_notice":""}
     if not os.path.exists(ADMIN_CONFIG):
         save_admin_config(defaults); return defaults
     try:
@@ -287,11 +288,98 @@ def check_expiration(cfg):
     remaining=(exp_date-date.today()).days
     if remaining<0:
         write_usage_log("접속차단",f"만료({exp_str})")
-        messagebox.showerror("사용 기간 만료",f"{cfg.get('expire_message','')}\n\n만료일: {exp_str}")
+        _show_expired_window(cfg, exp_str)
         return False
     if remaining<=7:
         messagebox.showwarning("기간 안내",f"사용 기간 {remaining}일 남음\n만료일: {exp_str}")
     return True
+
+def _show_expired_window(cfg, exp_str):
+    """만료 안내창 (결제 정보 포함 프리미엄 팝업)"""
+    try:
+        import webbrowser
+        exp_win = tk.Tk()
+        exp_win.title("⏰ 사용 기간 만료")
+        exp_win.geometry("480x520")
+        exp_win.resizable(False, False)
+        exp_win.configure(bg="#0f172a")
+        exp_win.attributes("-topmost", True)
+
+        # Header
+        hf = tk.Frame(exp_win, bg="#ef4444", pady=18)
+        hf.pack(fill=tk.X)
+        tk.Label(hf, text="⏰ 사용 기간 만료", font=("Arial", 16, "bold"), bg="#ef4444", fg="white").pack()
+
+        # Body
+        bf = tk.Frame(exp_win, bg="#1e293b", padx=28, pady=20)
+        bf.pack(fill=tk.BOTH, expand=True)
+
+        exp_msg = cfg.get("expire_message", "사용 기간이 만료되었습니다.\n관리자에게 문의하세요.")
+        tk.Label(bf, text=exp_msg, font=("Arial", 10), bg="#1e293b", fg="#f8fafc",
+                 justify="center", wraplength=400).pack(pady=(0, 8))
+        tk.Label(bf, text=f"만료일: {exp_str}", font=("Arial", 10, "bold"), bg="#1e293b", fg="#fbbf24").pack(pady=(0, 18))
+
+        # 결제 정보 섹션
+        bank = cfg.get("payment_bank", "").strip()
+        account = cfg.get("payment_account", "").strip()
+        holder = cfg.get("payment_holder", "").strip()
+        card_url = cfg.get("payment_card_url", "").strip()
+        notice = cfg.get("payment_notice", "").strip()
+
+        has_payment = bank or account or card_url
+        if has_payment:
+            sep = tk.Frame(bf, bg="#334155", height=1)
+            sep.pack(fill=tk.X, pady=(0, 12))
+
+            tk.Label(bf, text="💳 이용권 갱신 결제 정보", font=("Arial", 11, "bold"),
+                     bg="#1e293b", fg="#38bdf8").pack(pady=(0, 10))
+
+            if bank or account or holder:
+                af = tk.Frame(bf, bg="#0f172a", padx=14, pady=12)
+                af.pack(fill=tk.X, pady=(0, 8))
+                tk.Label(af, text="🏦 계좌이체", font=("Arial", 9, "bold"), bg="#0f172a", fg="#94a3b8").pack(anchor="w")
+                if bank:
+                    tk.Label(af, text=f"은행: {bank}", font=("Arial", 10), bg="#0f172a", fg="#f1f5f9").pack(anchor="w", pady=1)
+                if account:
+                    acct_frame = tk.Frame(af, bg="#0f172a")
+                    acct_frame.pack(anchor="w", fill=tk.X)
+                    acct_lbl = tk.Label(acct_frame, text=f"계좌: {account}", font=("Arial", 11, "bold"), bg="#0f172a", fg="#38bdf8")
+                    acct_lbl.pack(side=tk.LEFT)
+                    def copy_acct(a=account):
+                        try: exp_win.clipboard_clear(); exp_win.clipboard_append(a); messagebox.showinfo("복사", "계좌번호가 클립보드에 복사되었습니다.", parent=exp_win)
+                        except: pass
+                    tk.Button(acct_frame, text="📋 복사", font=("Arial", 8), bg="#334155", fg="white",
+                              relief="flat", bd=0, padx=6, pady=2, cursor="hand2",
+                              command=copy_acct).pack(side=tk.LEFT, padx=(8, 0))
+                if holder:
+                    tk.Label(af, text=f"예금주: {holder}", font=("Arial", 10), bg="#0f172a", fg="#f1f5f9").pack(anchor="w", pady=1)
+
+            if card_url:
+                def open_card():
+                    try: webbrowser.open(card_url)
+                    except: pass
+                tk.Button(bf, text="💳 카드결제 바로가기 →", font=("Arial", 10, "bold"),
+                          bg="#2563eb", fg="white", relief="flat", bd=0,
+                          padx=16, pady=8, cursor="hand2", activebackground="#1d4ed8",
+                          command=open_card).pack(fill=tk.X, pady=(4, 0))
+
+            if notice:
+                tk.Label(bf, text=notice, font=("Arial", 9), bg="#1e293b", fg="#94a3b8",
+                         justify="center", wraplength=400).pack(pady=(8, 0))
+        else:
+            tk.Label(bf, text="갱신을 원하시면 관리자에게 문의하세요.", font=("Arial", 10),
+                     bg="#1e293b", fg="#94a3b8").pack(pady=8)
+
+        # Close button
+        cf = tk.Frame(exp_win, bg="#0f172a", pady=12)
+        cf.pack(fill=tk.X)
+        tk.Button(cf, text="닫기", font=("Arial", 10, "bold"), bg="#475569", fg="white",
+                  relief="flat", bd=0, padx=24, pady=8, cursor="hand2",
+                  command=exp_win.destroy).pack()
+
+        exp_win.mainloop()
+    except Exception:
+        messagebox.showerror("사용 기간 만료", f"{cfg.get('expire_message','')}\n\n만료일: {exp_str}")
 
 # =========================================================
 #  ✅ 1. 세션 저장/복원 (중단점 이어하기)
@@ -792,115 +880,145 @@ def capture_coord_popup(step_title, step_desc, step_no="", countdown_sec=5):
 #  인증
 # =========================================================
 def verify_password():
+    """프리미엄 로그인 UI 인증 창"""
     cfg = load_admin_config()
     if not check_expiration(cfg): return False
-    
-    root_auth = tk.Tk()
-    root_auth.withdraw()
+
     init_fonts()
-    
-    pw = simpledialog.askstring("인증", "프로그램 실행 비밀번호를 입력하세요:", show="*")
-    if pw is None:
-        root_auth.destroy()
-        return False
-        
-    pw = pw.strip()
-    remote_url = cfg.get("remote_password_url", "").strip()
-    
-    is_valid = False
-    auth_method = "로컬"
-    
-    # 🔍 기기 식별 정보
+    result = {"value": False}
+
+    login_win = tk.Tk()
+    login_win.title("🔐 CIS 매크로 — 인증")
+    login_win.geometry("420x480")
+    login_win.resizable(False, False)
+    login_win.configure(bg="#0f172a")
+    login_win.attributes("-topmost", True)
+
+    # ── Header ──
+    hf = tk.Frame(login_win, bg="#2563eb", pady=20)
+    hf.pack(fill=tk.X)
+    tk.Label(hf, text="📱 CIS 문자발송 매크로", font=("Arial", 14, "bold"), bg="#2563eb", fg="white").pack()
+    tk.Label(hf, text="통합 번호등록 + 문자발송 시스템", font=("Arial", 9), bg="#2563eb", fg="#bfdbfe").pack(pady=(2, 0))
+
+    # ── Body ──
+    bf = tk.Frame(login_win, bg="#1e293b", padx=35, pady=30)
+    bf.pack(fill=tk.BOTH, expand=True)
+
+    tk.Label(bf, text="🔑 비밀번호 입력", font=("Arial", 11, "bold"), bg="#1e293b", fg="#f8fafc").pack(anchor="w", pady=(0, 8))
+
+    pw_var = tk.StringVar()
+    pw_entry = tk.Entry(bf, textvariable=pw_var, show="●", font=("Arial", 14),
+                        bg="#0f172a", fg="#f8fafc", insertbackground="white",
+                        relief="flat", bd=0)
+    pw_entry.pack(fill=tk.X, ipady=10, pady=(0, 6))
+    # 언더라인
+    tk.Frame(bf, bg="#334155", height=1).pack(fill=tk.X, pady=(0, 20))
+
+    msg_var = tk.StringVar()
+    msg_lbl = tk.Label(bf, textvariable=msg_var, font=("Arial", 9), bg="#1e293b", fg="#ef4444")
+    msg_lbl.pack(pady=(0, 12))
+
+    # 라이선스 만료일 표시
+    exp_str = cfg.get("expire_date", "").strip()
+    if exp_str:
+        try:
+            remaining = (datetime.strptime(exp_str, "%Y-%m-%d").date() - date.today()).days
+            exp_color = "#10b981" if remaining > 7 else "#f59e0b"
+            tk.Label(bf, text=f"📅 라이선스 만료: {exp_str}  ({remaining}일 남음)",
+                     font=("Arial", 9), bg="#1e293b", fg=exp_color).pack(pady=(0, 12))
+        except: pass
+
     pc, user = get_user_info()
     ext_ip = ""
-    
-    if remote_url and remote_url.startswith("http"):
-        try:
-            import urllib.request
-            import json
-            
-            # 🌐 기기 외부 IP 빠른 조회 (1.5초 타임아웃)
+
+    def do_login(event=None):
+        nonlocal ext_ip
+        pw = pw_var.get().strip()
+        if not pw:
+            msg_var.set("비밀번호를 입력하세요.")
+            return
+
+        remote_url = cfg.get("remote_password_url", "").strip()
+        is_valid = False
+        auth_method = "로컬"
+
+        if remote_url and remote_url.startswith("http"):
             try:
-                ip_req = urllib.request.Request("http://ip-api.com/json/", headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(ip_req, timeout=1.5) as ip_resp:
-                    ip_data = json.loads(ip_resp.read().decode("utf-8"))
-                    ext_ip = ip_data.get("query", "")
-            except:
-                pass
-                
-            req = urllib.request.Request(
-                remote_url,
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                content = response.read().decode("utf-8")
-                
-                allowed_pws = []
-                blacklisted_devices = []
-                in_blacklist = False
-                
-                for line in content.splitlines():
-                    line_clean = line.strip()
-                    if not line_clean or line_clean.startswith("#"):
-                        continue
-                    if line_clean.upper() == "[BLACKLIST]":
-                        in_blacklist = True
-                        continue
-                        
-                    if in_blacklist:
-                        blacklisted_devices.append(line_clean)
-                    else:
-                        allowed_pws.append(line_clean)
-                
-                # 🚫 블랙리스트에 걸렸는지 검사
-                device_id = f"{pc}/{user}".strip()
-                is_blocked = False
-                matched_block = ""
-                
-                for b in blacklisted_devices:
-                    b_clean = b.strip()
-                    if not b_clean: continue
-                    # PC명/사용자명 또는 각각의 이름 검사 (대소문자 무시)
-                    if b_clean.lower() in [device_id.lower(), pc.lower(), user.lower()]:
-                        is_blocked = True
-                        matched_block = b_clean
-                        break
-                    # IP 주소 매칭 검사
-                    if ext_ip and b_clean == ext_ip:
-                        is_blocked = True
-                        matched_block = ext_ip
-                        break
-                        
-                if is_blocked:
-                    messagebox.showerror("🚫 접근 차단됨", 
-                                         f"비인가 기기 또는 비정상적인 접근으로 인해 사용이 차단되었습니다.\n\n"
-                                         f"기기 식별자: {pc}/{user}\n"
-                                         f"IP 주소: {ext_ip or '확인 불가'}\n\n"
-                                         f"관리자에게 문의하시기 바랍니다.")
-                    write_usage_log("접속 차단", f"블랙리스트 기기 ({matched_block}) 차단")
-                    root_auth.destroy()
-                    return False
-                
-                if pw in allowed_pws:
-                    is_valid = True
-                    auth_method = "원격 웹"
-        except Exception as e:
-            write_usage_log("원격 인증 에러", str(e))
-            
-    if not is_valid:
-        correct_pw = cfg.get("user_password", "0303").strip()
-        if pw == correct_pw:
-            is_valid = True
-            
-    if is_valid:
-        root_auth.destroy()
-        write_usage_log("프로그램 접속", f"인증성공 ({auth_method})")
-        return True
-    else:
-        messagebox.showerror("인증 실패", "비밀번호가 일치하지 않습니다.")
-        write_usage_log("인증 실패")
-        root_auth.destroy()
-        return False
+                import urllib.request, json as _json
+                try:
+                    ip_req = urllib.request.Request("http://ip-api.com/json/", headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(ip_req, timeout=1.5) as ip_resp:
+                        ip_data = _json.loads(ip_resp.read().decode("utf-8"))
+                        ext_ip = ip_data.get("query", "")
+                except: pass
+
+                req = urllib.request.Request(remote_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    content = response.read().decode("utf-8")
+                    allowed_pws, blacklisted_devices, in_blacklist = [], [], False
+                    for line in content.splitlines():
+                        lc = line.strip()
+                        if not lc or lc.startswith("#"): continue
+                        if lc.upper() == "[BLACKLIST]": in_blacklist = True; continue
+                        (blacklisted_devices if in_blacklist else allowed_pws).append(lc)
+
+                    device_id = f"{pc}/{user}".strip()
+                    for b in blacklisted_devices:
+                        bc = b.strip()
+                        if not bc: continue
+                        if bc.lower() in [device_id.lower(), pc.lower(), user.lower()] or (ext_ip and bc == ext_ip):
+                            write_usage_log("접속 차단", f"블랙리스트 기기 ({bc}) 차단")
+                            result["value"] = False
+                            login_win.destroy()
+                            messagebox.showerror("🚫 접근 차단됨",
+                                f"비인가 기기 또는 비정상적인 접근으로 인해 사용이 차단되었습니다.\n\n"
+                                f"기기 식별자: {device_id}\nIP: {ext_ip or '확인 불가'}\n\n관리자에게 문의하세요.")
+                            return
+
+                    if pw in allowed_pws:
+                        is_valid = True; auth_method = "원격 웹"
+            except Exception as e:
+                write_usage_log("원격 인증 에러", str(e))
+
+        if not is_valid:
+            correct_pw = cfg.get("user_password", "0303").strip()
+            if pw == correct_pw:
+                is_valid = True
+
+        if is_valid:
+            write_usage_log("프로그램 접속", f"인증성공 ({auth_method})")
+            result["value"] = True
+            login_win.destroy()
+        else:
+            msg_var.set("❌ 비밀번호가 일치하지 않습니다.")
+            pw_var.set("")
+            pw_entry.focus_set()
+            write_usage_log("인증 실패")
+
+    def do_cancel():
+        result["value"] = False
+        login_win.destroy()
+
+    login_btn = tk.Button(bf, text="▶ 프로그램 실행", font=("Arial", 11, "bold"),
+                          bg="#2563eb", fg="white", relief="flat", bd=0,
+                          padx=20, pady=10, cursor="hand2",
+                          activebackground="#1d4ed8", command=do_login)
+    login_btn.pack(fill=tk.X, pady=(8, 4))
+
+    tk.Button(bf, text="취소", font=("Arial", 9), bg="#334155", fg="#94a3b8",
+              relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
+              activebackground="#475569", command=do_cancel).pack(fill=tk.X)
+
+    pw_entry.bind("<Return>", do_login)
+    pw_entry.focus_set()
+
+    # ── Footer ──
+    ff = tk.Frame(login_win, bg="#0f172a", pady=8)
+    ff.pack(fill=tk.X)
+    tk.Label(ff, text="Copyright © 2026 세은아빠", font=("Arial", 8), bg="#0f172a", fg="#475569").pack()
+
+    login_win.mainloop()
+    return result["value"]
 
 # =========================================================
 #  데이터 로드
@@ -1640,52 +1758,72 @@ def open_admin_panel():
     write_usage_log("관리자 패널")
     cfg=load_admin_config()
     
-    # Admin Toplevel Window (크기를 560x700으로 세로 확장)
-    win=tk.Toplevel(root); win.title("🔧 관리자 설정"); win.geometry("560x700"); win.configure(bg=COLOR_NAVY)
+    # Admin Toplevel Window (크기를 580x860으로 세로 확장 — 결제 정보 섹션 포함)
+    win=tk.Toplevel(root); win.title("🔧 관리자 설정"); win.geometry("580x860"); win.configure(bg=COLOR_NAVY)
     win.attributes("-topmost",True); win.resizable(False,False)
-    
+
     tk.Label(win,text="🔧 관리자 설정 패널",font=FONT_TITLE,bg=COLOR_NAVY,fg="white",pady=15).pack(fill=tk.X)
-    
-    bd=tk.Frame(win,bg="#f8fafc",padx=25,pady=20); bd.pack(fill=tk.BOTH,expand=True)
-    
+
+    # ── 스크롤 캔버스 ──
+    canvas = tk.Canvas(win, bg="#f8fafc", highlightthickness=0)
+    scrollbar = tk.Scrollbar(win, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    bd = tk.Frame(canvas, bg="#f8fafc", padx=25, pady=20)
+    canvas_window = canvas.create_window((0, 0), window=bd, anchor="nw")
+    def on_frame_configure(event): canvas.configure(scrollregion=canvas.bbox("all"))
+    def on_canvas_configure(event): canvas.itemconfig(canvas_window, width=event.width)
+    bd.bind("<Configure>", on_frame_configure)
+    canvas.bind("<Configure>", on_canvas_configure)
+    if IS_MAC:
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta)), "units"))
+    else:
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+    # ── 구분선 헬퍼 ──
+    def section_sep(label_text):
+        sf2 = tk.Frame(bd, bg="#e2e8f0", height=1); sf2.pack(fill=tk.X, pady=(12, 10))
+        tk.Label(bd, text=label_text, font=FONT_BOLD_10, bg="#f8fafc", fg=COLOR_NAVY).pack(anchor="w", pady=(0, 6))
+
+    # ── 기본 인증 설정 ──
     tk.Label(bd,text="🔑 프로그램 접속 비밀번호",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
     pv=tk.StringVar(value=cfg.get("user_password","0303"))
-    tk.Entry(bd,textvariable=pv,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(anchor="w",pady=(0,15))
-    
+    tk.Entry(bd,textvariable=pv,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(anchor="w",pady=(0,12))
+
     tk.Label(bd,text="🌐 원격 비밀번호 확인용 URL (선택사항)",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
     rv=tk.StringVar(value=cfg.get("remote_password_url",""))
-    tk.Entry(bd,textvariable=rv,font=FONT_REG_10,width=50,bd=1,relief="solid").pack(anchor="w",pady=(0,5))
-    tk.Label(bd,text="* 메모장(.txt) 형태의 웹 링크를 입력하면 실시간으로 해당 파일 안의 비밀번호 목록을 검증합니다.",font=FONT_REG_9,fg=COLOR_MUTED,bg="#f8fafc").pack(anchor="w",pady=(0,15))
-    
+    tk.Entry(bd,textvariable=rv,font=FONT_REG_10,width=52,bd=1,relief="solid").pack(anchor="w",pady=(0,4))
+    tk.Label(bd,text="* 메모장(.txt) 형태의 웹 링크를 입력하면 실시간으로 해당 파일 안의 비밀번호 목록을 검증합니다.",font=FONT_REG_9,fg=COLOR_MUTED,bg="#f8fafc",wraplength=490,justify="left").pack(anchor="w",pady=(0,12))
+
     tk.Label(bd,text="📅 만료일 (YYYY-MM-DD, 비워두면 평생 무제한)",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
     ev_frame = tk.Frame(bd, bg="#f8fafc")
-    ev_frame.pack(anchor="w", fill=tk.X, pady=(0,15))
+    ev_frame.pack(anchor="w", fill=tk.X, pady=(0,12))
     ev=tk.StringVar(value=cfg.get("expire_date",""))
     tk.Entry(ev_frame,textvariable=ev,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(side=tk.LEFT, ipady=1)
     create_btn(ev_frame, "📅 달력 선택", lambda: show_calendar_picker(ev, win), COLOR_PRIMARY, COLOR_PRIMARY_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT, padx=(5,0))
-    
+
     tk.Label(bd,text="💬 사용 기간 만료 안내 메시지",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
-    mt=tk.Text(bd,height=3,font=FONT_REG_10,bd=1,relief="solid"); mt.pack(fill=tk.X,pady=(0,15))
+    mt=tk.Text(bd,height=3,font=FONT_REG_10,bd=1,relief="solid"); mt.pack(fill=tk.X,pady=(0,12))
     mt.insert(tk.END,cfg.get("expire_message",""))
-    
-    # 디스코드 웹훅 입력 필드 추가
-    tk.Label(bd,text="📢 디스코드 실시간 알림 웹훅 URL",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
+
+    # ── 디스코드 웹훅 ──
+    section_sep("📢 디스코드 실시간 알림 웹훅 URL")
     dw_frame = tk.Frame(bd, bg="#f8fafc")
-    dw_frame.pack(fill=tk.X, pady=(0,15))
+    dw_frame.pack(fill=tk.X, pady=(0,12))
     dv=tk.StringVar(value=cfg.get("discord_webhook",""))
     tk.Entry(dw_frame,textvariable=dv,font=FONT_REG_10,width=38,bd=1,relief="solid").pack(side=tk.LEFT, ipady=2)
-    
+
     def test_discord_webhook():
         webhook_url = dv.get().strip()
         if not webhook_url:
             messagebox.showwarning("입력 필요", "디스코드 웹훅 URL을 먼저 입력해 주세요.", parent=win)
             return
-            
         test_payload = {
             "embeds": [{
                 "title": "🧪 CIS Discord Webhook Test Connection",
                 "description": "디스코드 알림 연동 테스트가 성공적으로 완료되었습니다!",
-                "color": 0x2ecc71,  # Green
+                "color": 0x2ecc71,
                 "fields": [
                     {"name": "테스트 시간", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "inline": True},
                     {"name": "접속 PC", "value": pc, "inline": True}
@@ -1693,29 +1831,65 @@ def open_admin_panel():
                 "footer": {"text": "Real-time Monitoring System Test"}
             }]
         }
-        
         def test_worker():
             try:
-                import urllib.request
-                import json
-                req = urllib.request.Request(
-                    webhook_url,
-                    data=json.dumps(test_payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json", "User-Agent": "urllib-discord-bot"}
-                )
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    pass
+                import urllib.request, json as _j
+                req = urllib.request.Request(webhook_url, data=_j.dumps(test_payload).encode("utf-8"),
+                                             headers={"Content-Type": "application/json", "User-Agent": "urllib-discord-bot"})
+                with urllib.request.urlopen(req, timeout=5): pass
                 win.after(0, lambda: messagebox.showinfo("성공", "디스코드 테스트 메세지가 전송되었습니다.\n디스코드 채널을 확인하세요.", parent=win))
             except Exception as e:
                 win.after(0, lambda: messagebox.showerror("실패", f"디스코드 웹훅 전송 실패:\n{e}", parent=win))
-                
         threading.Thread(target=test_worker, daemon=True).start()
 
     create_btn(dw_frame, "🧪 테스트 전송", test_discord_webhook, COLOR_INFO, COLOR_INFO_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT, padx=(5,0))
-    
-    tk.Label(bd,text="📊 프로그램 사용 이력 모니터링",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w",pady=(5,5))
-    bf=tk.Frame(bd,bg="#f8fafc"); bf.pack(fill=tk.X, pady=(0,15))
-    
+
+    # ── 💳 결제 정보 설정 (NEW) ──
+    section_sep("💳 결제 정보 설정 (만료 안내창에 표시됩니다)")
+
+    pay_card_bg = "#f0f9ff"
+    pay_card = tk.Frame(bd, bg=pay_card_bg, bd=1, relief="solid", padx=14, pady=14)
+    pay_card.pack(fill=tk.X, pady=(0, 8))
+
+    tk.Label(pay_card, text="🏦 계좌이체 정보", font=FONT_BOLD_9, bg=pay_card_bg, fg="#0369a1").pack(anchor="w", pady=(0, 6))
+
+    row_bank = tk.Frame(pay_card, bg=pay_card_bg); row_bank.pack(fill=tk.X, pady=2)
+    tk.Label(row_bank, text="은행명", font=FONT_REG_9, bg=pay_card_bg, fg="#475569", width=8, anchor="w").pack(side=tk.LEFT)
+    bank_v = tk.StringVar(value=cfg.get("payment_bank", ""))
+    tk.Entry(row_bank, textvariable=bank_v, font=FONT_REG_10, width=18, bd=1, relief="solid").pack(side=tk.LEFT)
+    tk.Label(row_bank, text="예: 국민, 신한, 카카오", font=FONT_REG_9, bg=pay_card_bg, fg="#94a3b8").pack(side=tk.LEFT, padx=(6,0))
+
+    row_acct = tk.Frame(pay_card, bg=pay_card_bg); row_acct.pack(fill=tk.X, pady=2)
+    tk.Label(row_acct, text="계좌번호", font=FONT_REG_9, bg=pay_card_bg, fg="#475569", width=8, anchor="w").pack(side=tk.LEFT)
+    acct_v = tk.StringVar(value=cfg.get("payment_account", ""))
+    tk.Entry(row_acct, textvariable=acct_v, font=FONT_REG_10, width=22, bd=1, relief="solid").pack(side=tk.LEFT)
+
+    row_holder = tk.Frame(pay_card, bg=pay_card_bg); row_holder.pack(fill=tk.X, pady=2)
+    tk.Label(row_holder, text="예금주", font=FONT_REG_9, bg=pay_card_bg, fg="#475569", width=8, anchor="w").pack(side=tk.LEFT)
+    holder_v = tk.StringVar(value=cfg.get("payment_holder", ""))
+    tk.Entry(row_holder, textvariable=holder_v, font=FONT_REG_10, width=14, bd=1, relief="solid").pack(side=tk.LEFT)
+
+    pay_card2 = tk.Frame(bd, bg="#f0fdf4", bd=1, relief="solid", padx=14, pady=14)
+    pay_card2.pack(fill=tk.X, pady=(0, 8))
+
+    tk.Label(pay_card2, text="💳 카드결제 링크", font=FONT_BOLD_9, bg="#f0fdf4", fg="#15803d").pack(anchor="w", pady=(0, 6))
+    row_card = tk.Frame(pay_card2, bg="#f0fdf4"); row_card.pack(fill=tk.X, pady=2)
+    tk.Label(row_card, text="결제 URL", font=FONT_REG_9, bg="#f0fdf4", fg="#475569", width=8, anchor="w").pack(side=tk.LEFT)
+    card_url_v = tk.StringVar(value=cfg.get("payment_card_url", ""))
+    tk.Entry(row_card, textvariable=card_url_v, font=FONT_REG_10, width=36, bd=1, relief="solid").pack(side=tk.LEFT)
+    tk.Label(pay_card2, text="예: 크몽 상품 링크, 토스페이 링크 등", font=FONT_REG_9, bg="#f0fdf4", fg="#86efac").pack(anchor="w")
+
+    notice_card = tk.Frame(bd, bg="#fefce8", bd=1, relief="solid", padx=14, pady=14)
+    notice_card.pack(fill=tk.X, pady=(0, 12))
+    tk.Label(notice_card, text="📝 결제 안내 문구 (선택)", font=FONT_BOLD_9, bg="#fefce8", fg="#92400e").pack(anchor="w", pady=(0, 6))
+    notice_v = tk.StringVar(value=cfg.get("payment_notice", ""))
+    tk.Entry(notice_card, textvariable=notice_v, font=FONT_REG_10, width=50, bd=1, relief="solid").pack(fill=tk.X)
+    tk.Label(notice_card, text="예: 입금 후 카카오톡 세은아빠로 문의주세요", font=FONT_REG_9, bg="#fefce8", fg="#a16207").pack(anchor="w", pady=(4,0))
+
+    # ── 사용 이력 모니터링 ──
+    section_sep("📊 프로그램 사용 이력 모니터링")
+    bf=tk.Frame(bd,bg="#f8fafc"); bf.pack(fill=tk.X, pady=(0,12))
+
     def show_recent():
         if not os.path.exists(USAGE_LOG_FILE): messagebox.showinfo("이력","이력 없음"); return
         with open(USAGE_LOG_FILE,"r",encoding="utf-8") as f: lines=f.readlines()[-30:]
@@ -1723,25 +1897,36 @@ def open_admin_panel():
         s=tk.Toplevel(win); s.title("최근 30건 이력"); s.geometry("650x400"); s.attributes("-topmost",True)
         t=tk.Text(s,font=FONT_REG_9); t.pack(fill=tk.BOTH,expand=True,padx=10,pady=10)
         t.insert(tk.END,"".join(lines)); t.config(state=tk.DISABLED)
-        
+
     create_btn(bf, "📊 최근 사용 이력 확인", show_recent, COLOR_PRIMARY, COLOR_PRIMARY_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
     create_btn(bf, "📄 전체 사용이력.txt 열기", lambda: open_path(USAGE_LOG_FILE) if os.path.exists(USAGE_LOG_FILE) else None, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
-    
+
     pc,user=get_user_info()
     tk.Label(bd,text=f"현재 접속 PC: {pc}  |  사용자 계정: {user}",font=FONT_REG_9,fg=COLOR_MUTED,bg="#f8fafc").pack(anchor="w",pady=(5,0))
-    
+
     def save_cfg():
         ne=ev.get().strip()
         if ne:
             try: datetime.strptime(ne,"%Y-%m-%d")
             except: messagebox.showerror("형식 오류","만료일은 YYYY-MM-DD 형식으로 입력하세요."); return
-        nc={"user_password":pv.get().strip() or "0303","expire_date":ne,"expire_message":mt.get("1.0",tk.END).strip(),
+        nc={
+            "user_password":pv.get().strip() or "0303",
+            "expire_date":ne,
+            "expire_message":mt.get("1.0",tk.END).strip(),
             "discord_webhook":dv.get().strip(),
             "remote_password_url":rv.get().strip(),
-            "created":cfg.get("created",""),"last_modified":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"modified_by":f"{pc}/{user}"}
+            "payment_bank":bank_v.get().strip(),
+            "payment_account":acct_v.get().strip(),
+            "payment_holder":holder_v.get().strip(),
+            "payment_card_url":card_url_v.get().strip(),
+            "payment_notice":notice_v.get().strip(),
+            "created":cfg.get("created",""),
+            "last_modified":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "modified_by":f"{pc}/{user}"
+        }
         save_admin_config(nc); write_usage_log("설정변경",f"만료={ne or '없음'}")
         messagebox.showinfo("저장","관리자 설정이 저장되었습니다."); win.destroy()
-        
+
     sf=tk.Frame(bd,bg="#f8fafc"); sf.pack(fill=tk.X,pady=(15,0))
     create_btn(sf, "💾 설정 저장", save_cfg, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, width=12).pack(side=tk.LEFT)
     create_btn(sf, "닫기", win.destroy, "#94a3b8", "#64748b", width=10).pack(side=tk.RIGHT)
