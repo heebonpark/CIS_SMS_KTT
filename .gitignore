@@ -1,0 +1,24 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# PyInstaller build files
+build/
+dist/
+*.spec
+
+# CIS app data/logs (exclude private credentials and logs)
+발송로그.txt
+사용이력.txt
+session.json
+admin_config.dat
+templates.json
+
+# OS metadata
+.DS_Store
+Thumbs.db
