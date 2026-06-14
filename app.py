@@ -367,9 +367,10 @@ def create_btn(parent, text, command, bg_color, hover_color, fg_color="white", f
         fg=fg_color,
         activebackground=hover_color,
         activeforeground=fg_color,
-        highlightbackground=parent.cget("bg"),
-        bd=0,
-        relief="flat",
+        highlightbackground=COLOR_BORDER,
+        highlightthickness=1,
+        bd=1,
+        relief="solid",
         font=font,
         state=state,
         padx=12,
@@ -385,9 +386,9 @@ def create_btn(parent, text, command, bg_color, hover_color, fg_color="white", f
 
 def set_btn_state(btn, state, normal_bg, hover_bg, fg="white"):
     if state == tk.DISABLED:
-        btn.config(state=tk.DISABLED, bg="#cbd5e1", fg="#94a3b8")
+        btn.config(state=tk.DISABLED, bg="#cbd5e1", fg="#94a3b8", highlightbackground="#cbd5e1")
     else:
-        btn.config(state=tk.NORMAL, bg=normal_bg, fg=fg)
+        btn.config(state=tk.NORMAL, bg=normal_bg, fg=fg, highlightbackground=COLOR_BORDER)
         btn.bind("<Enter>", lambda e: btn.config(bg=hover_bg))
         btn.bind("<Leave>", lambda e: btn.config(bg=normal_bg))
 
@@ -569,24 +570,25 @@ def setup_coord_sms():
 def sms_send_one(idx, phone, message):
     """1건 발송 시도. 성공=True, 실패=False"""
     delay=get_step_delay()
+    prefix = "즉시발송" if idx == -2 else f"{idx+1}"
     try:
-        update_status(f"[{idx+1}] ① 메시지 ({phone})")
+        update_status(f"[{prefix}] ① 메시지 ({phone})")
         pyautogui.click(*coord_msg); time.sleep(0.3)
         pyautogui.hotkey(MODIFIER,"a"); time.sleep(0.15)
         pyautogui.press("backspace"); time.sleep(0.3)
         safe_input(message); time.sleep(delay)
 
-        update_status(f"[{idx+1}] ② 받는사람 ({phone})")
+        update_status(f"[{prefix}] ② 받는사람 ({phone})")
         pyautogui.click(*coord_phone); time.sleep(0.3)
         pyautogui.hotkey(MODIFIER,"a"); time.sleep(0.15)
         pyautogui.press("backspace"); time.sleep(0.3)
         safe_input(phone); time.sleep(delay)
 
-        update_status(f"[{idx+1}] ③ 발송 → {delay}초")
+        update_status(f"[{prefix}] ③ 발송 → {delay}초")
         pyautogui.click(*coord_send); time.sleep(0.15)
         pyautogui.press("enter"); time.sleep(delay)
 
-        update_status(f"[{idx+1}] ④ 확인 → {delay}초")
+        update_status(f"[{prefix}] ④ 확인 → {delay}초")
         pyautogui.click(*coord_confirm); time.sleep(0.15)
         pyautogui.press("enter"); time.sleep(delay)
         return True
@@ -756,6 +758,87 @@ def open_admin_panel():
     create_btn(sf, "닫기", win.destroy, "#94a3b8", "#64748b", width=10).pack(side=tk.RIGHT)
 
 # =========================================================
+#  추가 기능: 예시 로드, 수동 등록, 즉시 발송
+# =========================================================
+def load_example_data():
+    global data, registered_indices, failed_indices, start_index
+    try:
+        example_df = pd.DataFrame([
+            {"전화번호": "01012345678", "발송문자": "[CIS 알림] 1차 테스트 발송 예시입니다."},
+            {"전화번호": "01098765432", "발송문자": "[CIS 알림] 2차 개별 맞춤형 안내 문자입니다."},
+            {"전화번호": "01011112222", "발송문자": "[CIS 알림] 3차 수신 확인용 예시입니다."}
+        ])
+        process_and_set_data(example_df, silent=True)
+        filename_label.config(text="💡 데이터 상태: 예시용 DB 레코드 로드됨")
+        write_usage_log("예시 데이터 로드")
+        update_status("예시 데이터 로드 완료")
+    except Exception as e:
+        messagebox.showerror("오류", f"예시 데이터를 로드할 수 없습니다: {e}")
+
+def add_manual_data():
+    global data
+    try:
+        num = manual_phone_entry.get().strip()
+        msg = manual_msg_entry.get().strip()
+        if not num:
+            messagebox.showwarning("입력 오류", "전화번호를 입력하세요.")
+            return
+        num = num.replace("-", "").replace(" ", "")
+        if not num.isdigit():
+            messagebox.showwarning("입력 오류", "전화번호는 숫자만 입력 가능합니다.")
+            return
+        num = num.zfill(11)
+        
+        new_row = pd.DataFrame([{"전화번호": num, "발송문자": msg}])
+        data = pd.concat([data, new_row], ignore_index=True)
+        
+        manual_phone_entry.delete(0, tk.END)
+        manual_msg_entry.delete(0, tk.END)
+        
+        update_tables()
+        update_progress()
+        update_status(f"수동 등록 추가: {num}")
+    except Exception as e:
+        messagebox.showerror("오류", f"수동 추가 중 오류 발생: {e}")
+
+def quick_send_action():
+    try:
+        phone = quick_phone_entry.get().strip()
+        msg = quick_msg_entry.get().strip()
+        
+        if not phone:
+            messagebox.showwarning("입력 오류", "발송할 연락처를 입력하세요.")
+            return
+        if not msg:
+            messagebox.showwarning("입력 오류", "발송할 문구를 입력하세요.")
+            return
+            
+        phone = phone.replace("-", "").replace(" ", "")
+        if not phone.isdigit():
+            messagebox.showwarning("입력 오류", "연락처는 숫자만 입력 가능합니다.")
+            return
+        phone = phone.zfill(11)
+        
+        if not all([coord_msg, coord_phone, coord_send, coord_confirm]):
+            messagebox.showwarning("좌표 미설정", "문자발송을 위한 좌표 4개가 모두 설정되지 않았습니다.\n먼저 [문자발송]에서 좌표 설정을 진행해 주세요.")
+            setup_coord_sms()
+            return
+            
+        def worker():
+            write_usage_log("즉시 발송", f"연락처:{phone}")
+            ok = sms_send_one(-2, phone, msg)
+            if ok:
+                messagebox.showinfo("성공", f"즉시 발송 완료!\n연락처: {phone}")
+                write_log("즉시발송성공", phone, msg)
+            else:
+                messagebox.showerror("실패", f"즉시 발송 실패!\n연락처: {phone}")
+                write_log("즉시발송실패", phone, msg)
+                
+        threading.Thread(target=worker, daemon=True).start()
+    except Exception as e:
+        messagebox.showerror("오류", f"즉시 발송 오류: {e}")
+
+# =========================================================
 #  GUI 구성
 # =========================================================
 def create_gui():
@@ -764,6 +847,7 @@ def create_gui():
     global delay_var,batch_var,retry_var,progress_var,lbl_progress,status_var
     global work_mode,mode_frame,sms_opts_frame,reg_opts_frame
     global tpl_var,tpl_dropdown,excel_writeback_var
+    global manual_phone_entry, manual_msg_entry, quick_phone_entry, quick_msg_entry
 
     root=tk.Tk(); root.title("📱 CIS 통합 매크로 — 번호등록 + 문자발송")
     root.geometry("1200x920" if IS_MAC else "1200x950")
@@ -816,12 +900,31 @@ def create_gui():
         
     create_btn(tf, "🔧 관리자 설정", open_admin_panel, "#334155", "#475569", fg_color="#f8fafc", font=FONT_BOLD_9).pack(side=tk.RIGHT,padx=15,pady=8)
 
-    # 1. 데이터 소스 (White Card Style)
-    lf=tk.LabelFrame(root,text=" 1. 데이터 소스 ",font=FONT_BOLD_11,bg=BG_CARD,fg=COLOR_NAVY,bd=1,relief="solid",padx=15,pady=10)
+    # 1. 데이터 소스 및 등록 (White Card Style)
+    lf=tk.LabelFrame(root,text=" 1. 데이터 소스 및 연락처 등록 ",font=FONT_BOLD_11,bg=BG_CARD,fg=COLOR_NAVY,bd=1,relief="solid",padx=15,pady=10)
     lf.pack(fill=tk.X,pady=(10,2),padx=20)
     
-    create_btn(lf, "📊 활성 엑셀 연동 (B열:전화번호 / C열:발송문구)", load_from_active_excel, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_10).pack(side=tk.LEFT,expand=True,fill=tk.X,padx=5,pady=5)
-    create_btn(lf, "📂 엑셀 파일 선택", load_from_file_path, COLOR_INFO, COLOR_INFO_HOVER, font=FONT_BOLD_10).pack(side=tk.RIGHT,expand=True,fill=tk.X,padx=5,pady=5)
+    # Row 1: 연동 & 예시
+    f_row = tk.Frame(lf, bg=BG_CARD)
+    f_row.pack(fill=tk.X, pady=(0, 8))
+    create_btn(f_row, "📊 활성 엑셀 연동 (B열:전화번호 / C열:발송문구)", load_from_active_excel, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_10).pack(side=tk.LEFT,expand=True,fill=tk.X,padx=3)
+    create_btn(f_row, "📂 엑셀 파일 선택", load_from_file_path, COLOR_INFO, COLOR_INFO_HOVER, font=FONT_BOLD_10).pack(side=tk.LEFT,expand=True,fill=tk.X,padx=3)
+    create_btn(f_row, "💡 예시 데이터 로드", load_example_data, "#8b5cf6", "#7c3aed", font=FONT_BOLD_10).pack(side=tk.LEFT,expand=True,fill=tk.X,padx=3)
+    
+    # Row 2: 수동 리스트 추가
+    m_row = tk.Frame(lf, bg=BG_CARD)
+    m_row.pack(fill=tk.X, pady=(4, 0))
+    tk.Label(m_row, text="➕ 개별 수동 등록:", font=FONT_BOLD_10, bg=BG_CARD, fg="#1e293b").pack(side=tk.LEFT, padx=(5, 10))
+    
+    tk.Label(m_row, text="연락처:", font=FONT_REG_10, bg=BG_CARD, fg="#475569").pack(side=tk.LEFT, padx=2)
+    manual_phone_entry = tk.Entry(m_row, font=FONT_REG_10, width=15, bd=1, relief="solid")
+    manual_phone_entry.pack(side=tk.LEFT, padx=5)
+    
+    tk.Label(m_row, text="발송문자:", font=FONT_REG_10, bg=BG_CARD, fg="#475569").pack(side=tk.LEFT, padx=(10, 2))
+    manual_msg_entry = tk.Entry(m_row, font=FONT_REG_10, width=45, bd=1, relief="solid")
+    manual_msg_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    create_btn(m_row, "➕ 리스트 추가", add_manual_data, COLOR_PRIMARY, COLOR_PRIMARY_HOVER, font=FONT_BOLD_9).pack(side=tk.RIGHT, padx=5)
     
     filename_label=tk.Label(root,text="연동 상태: 로드된 파일 없음",font=FONT_REG_9,fg=COLOR_MUTED,bg=BG_MAIN)
     filename_label.pack(anchor="w",padx=25,pady=(2,5))
@@ -886,7 +989,22 @@ def create_gui():
     fixed_msg_text.insert(tk.END,"[KT텔레캅] 안녕하세요. 미결제금 확인 요청드립니다.")
     fixed_msg_text.config(state=tk.DISABLED,bg="#f1f5f9")
 
-    # 3. 테이블 리스트
+    # 3. 단건 즉시 발송 (좌표 매크로)
+    qf=tk.LabelFrame(root,text=" 3. 단건 즉시 발송 (좌표 매크로) ",font=FONT_BOLD_11,bg=BG_CARD,fg=COLOR_NAVY,bd=1,relief="solid",padx=15,pady=8)
+    qf.pack(fill=tk.X,pady=(2,5),padx=20)
+    
+    tk.Label(qf, text="연락처:", font=FONT_REG_10, bg=BG_CARD, fg="#1e293b").pack(side=tk.LEFT, padx=2)
+    quick_phone_entry = tk.Entry(qf, font=FONT_REG_10, width=15, bd=1, relief="solid")
+    quick_phone_entry.pack(side=tk.LEFT, padx=5)
+    
+    tk.Label(qf, text="발송문자:", font=FONT_REG_10, bg=BG_CARD, fg="#1e293b").pack(side=tk.LEFT, padx=(10, 2))
+    quick_msg_entry = tk.Entry(qf, font=FONT_REG_10, width=40, bd=1, relief="solid")
+    quick_msg_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    create_btn(qf, "📍 발송 좌표 설정", setup_coord_sms, COLOR_MUTED, COLOR_MUTED_HOVER, font=FONT_BOLD_9).pack(side=tk.RIGHT, padx=3)
+    create_btn(qf, "⚡ 즉시 발송 실행", quick_send_action, COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_9).pack(side=tk.RIGHT, padx=3)
+
+    # 4. 테이블 리스트
     tbf=tk.Frame(root,bg=BG_MAIN)
     tbf.pack(fill=tk.BOTH,expand=True,padx=20,pady=5)
     
