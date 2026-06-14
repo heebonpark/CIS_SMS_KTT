@@ -20,12 +20,18 @@
 프로그램을 다른 사용자와 공유하여 실행할 때는 아래 단계를 따르시면 됩니다.
 
 ### Step 1. 프로그램 다운로드
-아래 방법 중 하나를 선택하여 코드를 내려받습니다.
 
-* **방법 A (간편형 - 압축 파일로 받기)**
+* **방법 A (추천 - 무설치 단독 실행 파일)**
+  파이썬 설치 번거로움 없이 즉시 실행하고 싶으시다면 공식 배포 페이지에서 본인 OS에 맞는 실행 파일을 다운로드하세요:
+  👉 **[무설치 실행 파일 다운로드 (Releases 페이지)](https://github.com/heebonpark/CIS_SMS_KTT/releases/tag/latest)**
+  * **Windows**: `CIS_SMS_Macro_Windows.exe`를 다운로드하여 실행합니다.
+  * **macOS**: `CIS_SMS_Macro_Mac.zip`를 다운로드하여 압축 해제 후 앱을 실행합니다. (실행 전 `시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용`에서 실행 주체에 대한 제어 권한 허용이 필요합니다.)
+
+* **방법 B (압축 파일로 소스 코드 받기)**
   1. 우측 상단의 녹색 **[Code]** 버튼을 클릭한 뒤 **[Download ZIP]**을 클릭합니다.
   2. 다운로드된 압축 파일을 해제합니다.
-* **방법 B (개발자형 - Git 클론)**
+  
+* **방법 C (개발자형 - Git 클론)**
   ```bash
   git clone https://github.com/heebonpark/CIS_SMS_KTT.git
   cd CIS_SMS_KTT
