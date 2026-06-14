@@ -157,7 +157,7 @@ macro_config = load_macro_config()
 #  관리자 설정 (base64)
 # =========================================================
 def load_admin_config():
-    defaults = {"user_password":"0303","expire_date":"","expire_message":"사용 기간이 만료되었습니다.\n관리자에게 문의하세요.","created":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"discord_webhook":""}
+    defaults = {"user_password":"0303","expire_date":"","expire_message":"사용 기간이 만료되었습니다.\n관리자에게 문의하세요.","created":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"discord_webhook":"","remote_password_url":""}
     if not os.path.exists(ADMIN_CONFIG):
         save_admin_config(defaults); return defaults
     try:
@@ -554,18 +554,55 @@ def capture_coord_popup(step_title, step_desc, step_no="", countdown_sec=5):
 #  인증
 # =========================================================
 def verify_password():
-    cfg=load_admin_config()
+    cfg = load_admin_config()
     if not check_expiration(cfg): return False
-    correct_pw=cfg.get("user_password","0303")
-    root_auth=tk.Tk(); root_auth.withdraw()
+    
+    root_auth = tk.Tk()
+    root_auth.withdraw()
     init_fonts()
-    pw=simpledialog.askstring("인증","프로그램 실행 비밀번호를 입력하세요:",show="*")
-    if pw==correct_pw:
-        root_auth.destroy(); write_usage_log("프로그램 접속"); return True
-    if pw is not None:
-        messagebox.showerror("인증 실패","비밀번호가 일치하지 않습니다.")
+    
+    pw = simpledialog.askstring("인증", "프로그램 실행 비밀번호를 입력하세요:", show="*")
+    if pw is None:
+        root_auth.destroy()
+        return False
+        
+    pw = pw.strip()
+    remote_url = cfg.get("remote_password_url", "").strip()
+    
+    is_valid = False
+    auth_method = "로컬"
+    
+    if remote_url and remote_url.startswith("http"):
+        try:
+            import urllib.request
+            import json
+            req = urllib.request.Request(
+                remote_url,
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                content = response.read().decode("utf-8")
+                allowed_pws = [line.strip() for line in content.splitlines() if line.strip()]
+                if pw in allowed_pws:
+                    is_valid = True
+                    auth_method = "원격 웹"
+        except Exception as e:
+            write_usage_log("원격 인증 에러", str(e))
+            
+    if not is_valid:
+        correct_pw = cfg.get("user_password", "0303").strip()
+        if pw == correct_pw:
+            is_valid = True
+            
+    if is_valid:
+        root_auth.destroy()
+        write_usage_log("프로그램 접속", f"인증성공 ({auth_method})")
+        return True
+    else:
+        messagebox.showerror("인증 실패", "비밀번호가 일치하지 않습니다.")
         write_usage_log("인증 실패")
-    root_auth.destroy(); return False
+        root_auth.destroy()
+        return False
 
 # =========================================================
 #  데이터 로드
@@ -1231,6 +1268,11 @@ def open_admin_panel():
     pv=tk.StringVar(value=cfg.get("user_password","0303"))
     tk.Entry(bd,textvariable=pv,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(anchor="w",pady=(0,15))
     
+    tk.Label(bd,text="🌐 원격 비밀번호 확인용 URL (선택사항)",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
+    rv=tk.StringVar(value=cfg.get("remote_password_url",""))
+    tk.Entry(bd,textvariable=rv,font=FONT_REG_10,width=50,bd=1,relief="solid").pack(anchor="w",pady=(0,5))
+    tk.Label(bd,text="* 메모장(.txt) 형태의 웹 링크를 입력하면 실시간으로 해당 파일 안의 비밀번호 목록을 검증합니다.",font=FONT_REG_9,fg=COLOR_MUTED,bg="#f8fafc").pack(anchor="w",pady=(0,15))
+    
     tk.Label(bd,text="📅 만료일 (YYYY-MM-DD, 비워두면 평생 무제한)",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
     ev=tk.StringVar(value=cfg.get("expire_date",""))
     tk.Entry(bd,textvariable=ev,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(anchor="w",pady=(0,15))
@@ -1308,6 +1350,7 @@ def open_admin_panel():
             except: messagebox.showerror("형식 오류","만료일은 YYYY-MM-DD 형식으로 입력하세요."); return
         nc={"user_password":pv.get().strip() or "0303","expire_date":ne,"expire_message":mt.get("1.0",tk.END).strip(),
             "discord_webhook":dv.get().strip(),
+            "remote_password_url":rv.get().strip(),
             "created":cfg.get("created",""),"last_modified":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"modified_by":f"{pc}/{user}"}
         save_admin_config(nc); write_usage_log("설정변경",f"만료={ne or '없음'}")
         messagebox.showinfo("저장","관리자 설정이 저장되었습니다."); win.destroy()
