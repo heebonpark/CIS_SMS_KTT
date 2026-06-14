@@ -18,6 +18,7 @@ dist/
 session.json
 admin_config.dat
 templates.json
+macro_config.json
 
 # OS metadata
 .DS_Store

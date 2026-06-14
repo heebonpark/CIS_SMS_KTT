@@ -557,6 +557,122 @@ def export_results_to_excel():
     except Exception as e:
         messagebox.showerror("오류", f"엑셀 파일 저장 중 오류가 발생했습니다.\n\n{e}")
 
+def show_calendar_picker(entry_var, parent):
+    import calendar
+    from datetime import datetime
+    
+    cal_win = tk.Toplevel(parent)
+    cal_win.title("📅 날짜 선택")
+    cal_win.geometry("300x330")
+    cal_win.resizable(False, False)
+    cal_win.transient(parent)
+    cal_win.grab_set()
+    cal_win.configure(bg="#f8fafc")
+    
+    # Get current value or current date
+    current_val = entry_var.get().strip()
+    try:
+        current_date = datetime.strptime(current_val, "%Y-%m-%d")
+    except:
+        current_date = datetime.now()
+        
+    year_var = tk.IntVar(value=current_date.year)
+    month_var = tk.IntVar(value=current_date.month)
+    
+    header_frame = tk.Frame(cal_win, bg="#1e293b", pady=8)
+    header_frame.pack(fill=tk.X)
+    
+    title_label = tk.Label(header_frame, text="", font=("Pretendard", 11, "bold"), fg="white", bg="#1e293b")
+    
+    def update_calendar():
+        # Clear days grid
+        for widget in days_frame.winfo_children():
+            widget.destroy()
+            
+        y = year_var.get()
+        m = month_var.get()
+        title_label.config(text=f"{y}년 {m}월")
+        
+        # Weekday headers
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        for col, wd in enumerate(weekdays):
+            fg_color = "#ef4444" if col == 6 else ("#3b82f6" if col == 5 else "#64748b")
+            tk.Label(days_frame, text=wd, font=("Pretendard", 9, "bold"), bg="#f8fafc", fg=fg_color).grid(row=0, column=col, pady=4)
+            
+        # Get days structure
+        cal = calendar.monthcalendar(y, m)
+        for r_idx, week in enumerate(cal):
+            for c_idx, day in enumerate(week):
+                if day == 0:
+                    continue
+                
+                # Highlight if it matches the current date
+                is_selected = (y == current_date.year and m == current_date.month and day == current_date.day)
+                bg_color = "#2563eb" if is_selected else "#f1f5f9"
+                fg_color = "white" if is_selected else ("#ef4444" if c_idx == 6 else ("#3b82f6" if c_idx == 5 else "#1e293b"))
+                
+                btn = tk.Button(
+                    days_frame, text=str(day), font=("Pretendard", 9),
+                    bg=bg_color, fg=fg_color, width=3, height=1, relief="flat", bd=0,
+                    activebackground="#3b82f6", activeforeground="white",
+                    command=lambda d=day: select_day(d)
+                )
+                btn.grid(row=r_idx + 1, column=c_idx, padx=2, pady=2)
+                
+    def prev_month():
+        m = month_var.get() - 1
+        if m == 0:
+            month_var.set(12)
+            year_var.set(year_var.get() - 1)
+        else:
+            month_var.set(m)
+        update_calendar()
+        
+    def next_month():
+        m = month_var.get() + 1
+        if m == 13:
+            month_var.set(1)
+            year_var.set(year_var.get() + 1)
+        else:
+            month_var.set(m)
+        update_calendar()
+        
+    def select_day(day):
+        y = year_var.get()
+        m = month_var.get()
+        selected_date_str = f"{y:04d}-{m:02d}-{day:02d}"
+        entry_var.set(selected_date_str)
+        cal_win.destroy()
+        
+    def clear_date():
+        entry_var.set("")
+        cal_win.destroy()
+        
+    # Header buttons
+    prev_btn = tk.Button(header_frame, text="◀", font=("Pretendard", 9), fg="white", bg="#1e293b", bd=0, activebackground="#1e293b", activeforeground="#94a3b8", command=prev_month)
+    prev_btn.pack(side=tk.LEFT, padx=15)
+    
+    title_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    
+    next_btn = tk.Button(header_frame, text="▶", font=("Pretendard", 9), fg="white", bg="#1e293b", bd=0, activebackground="#1e293b", activeforeground="#94a3b8", command=next_month)
+    next_btn.pack(side=tk.RIGHT, padx=15)
+    
+    # Days frame
+    days_frame = tk.Frame(cal_win, bg="#f8fafc")
+    days_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Footer frame for Clear/Close
+    footer_frame = tk.Frame(cal_win, bg="#f1f5f9", pady=6)
+    footer_frame.pack(fill=tk.X)
+    
+    clear_btn = tk.Button(footer_frame, text="🧹 무제한 (지우기)", font=("Pretendard", 9, "bold"), fg="#b91c1c", bg="#fee2e2", relief="flat", bd=0, activebackground="#fee2e2", command=clear_date)
+    clear_btn.pack(side=tk.LEFT, padx=15)
+    
+    close_btn = tk.Button(footer_frame, text="닫기", font=("Pretendard", 9), fg="#475569", bg="#e2e8f0", relief="flat", bd=0, activebackground="#cbd5e1", command=cal_win.destroy)
+    close_btn.pack(side=tk.RIGHT, padx=15)
+    
+    update_calendar()
+
 # =========================================================
 #  로그 / 유틸
 # =========================================================
@@ -1482,8 +1598,11 @@ def open_admin_panel():
     tk.Label(bd,text="* 메모장(.txt) 형태의 웹 링크를 입력하면 실시간으로 해당 파일 안의 비밀번호 목록을 검증합니다.",font=FONT_REG_9,fg=COLOR_MUTED,bg="#f8fafc").pack(anchor="w",pady=(0,15))
     
     tk.Label(bd,text="📅 만료일 (YYYY-MM-DD, 비워두면 평생 무제한)",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
+    ev_frame = tk.Frame(bd, bg="#f8fafc")
+    ev_frame.pack(anchor="w", fill=tk.X, pady=(0,15))
     ev=tk.StringVar(value=cfg.get("expire_date",""))
-    tk.Entry(bd,textvariable=ev,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(anchor="w",pady=(0,15))
+    tk.Entry(ev_frame,textvariable=ev,font=FONT_REG_10,width=20,bd=1,relief="solid").pack(side=tk.LEFT, ipady=1)
+    create_btn(ev_frame, "📅 달력 선택", lambda: show_calendar_picker(ev, win), COLOR_PRIMARY, COLOR_PRIMARY_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT, padx=(5,0))
     
     tk.Label(bd,text="💬 사용 기간 만료 안내 메시지",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
     mt=tk.Text(bd,height=3,font=FONT_REG_10,bd=1,relief="solid"); mt.pack(fill=tk.X,pady=(0,15))
@@ -1894,6 +2013,64 @@ def create_gui():
     right_table.heading("n",text="No"); right_table.heading("p",text="연락처"); right_table.heading("s",text="처리 상태")
     right_table.column("n",width=50,anchor="center"); right_table.column("p",width=130,anchor="center"); right_table.column("s",width=120,anchor="center")
     rsc.pack(side=tk.RIGHT,fill=tk.Y); right_table.pack(fill=tk.BOTH,expand=True,padx=2,pady=2)
+
+    def on_left_double_click(event):
+        item = left_table.focus()
+        if not item: return
+        vals = left_table.item(item, "values")
+        if not vals: return
+        try:
+            row_idx = int(vals[0]) - 1
+            if messagebox.askyesno("삭제 확인", f"{vals[1]} 번호를 발송 목록에서 삭제하시겠습니까?"):
+                global data, start_index, registered_indices, failed_indices
+                data = data.drop(row_idx).reset_index(drop=True)
+                
+                # Shift indices after row_idx
+                new_reg = set()
+                for idx in registered_indices:
+                    if idx < row_idx:
+                        new_reg.add(idx)
+                    elif idx > row_idx:
+                        new_reg.add(idx - 1)
+                registered_indices = new_reg
+                
+                new_fail = set()
+                for idx in failed_indices:
+                    if idx < row_idx:
+                        new_fail.add(idx)
+                    elif idx > row_idx:
+                        new_fail.add(idx - 1)
+                failed_indices = new_fail
+                
+                if start_index > row_idx:
+                    start_index = max(0, start_index - 1)
+                
+                update_tables()
+                update_progress()
+                update_status(f"목록에서 삭제됨: {vals[1]}")
+        except Exception as e:
+            pass
+
+    def on_right_double_click(event):
+        item = right_table.focus()
+        if not item: return
+        vals = right_table.item(item, "values")
+        if not vals: return
+        try:
+            row_idx = int(vals[0]) - 1
+            if messagebox.askyesno("대기열로 이동", f"{vals[1]} 번호를 대기 목록으로 다시 이동하시겠습니까?"):
+                global registered_indices, failed_indices, start_index
+                registered_indices.discard(row_idx)
+                failed_indices.discard(row_idx)
+                start_index = min(start_index, row_idx)
+                update_tables()
+                update_progress()
+                update_status(f"대기 목록으로 이동됨: {vals[1]}")
+        except Exception as e:
+            pass
+
+    left_table.bind("<Double-1>", on_left_double_click)
+    right_table.bind("<Double-1>", on_right_double_click)
 
     # 4. 진행률 (Progress Bar)
     pf=tk.Frame(root,bg=BG_MAIN)
