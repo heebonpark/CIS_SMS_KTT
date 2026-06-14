@@ -117,6 +117,42 @@ PASTE_DELAY = 0.3
 REG_DELAY_INPUT = 0.05
 REG_DELAY_TAB = 0.1
 
+MACRO_CONFIG_FILE = os.path.join(APP_DIR, "macro_config.json")
+
+def load_macro_config():
+    defaults = {
+        "번호등록": [
+            {"type": "click_type", "name": "받는사람 입력칸", "coord": None, "value_source": "phone"}
+        ],
+        "문자발송": [
+            {"type": "click_type", "name": "① 메시지 입력칸", "coord": None, "value_source": "message"},
+            {"type": "click_type", "name": "② 받는사람 입력칸", "coord": None, "value_source": "phone"},
+            {"type": "click_only", "name": "③ SMS 발송 버튼", "coord": None},
+            {"type": "click_only", "name": "④ 확인 버튼", "coord": None}
+        ]
+    }
+    if not os.path.exists(MACRO_CONFIG_FILE):
+        save_macro_config(defaults)
+        return defaults
+    try:
+        with open(MACRO_CONFIG_FILE, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        for mode in ["번호등록", "문자발송"]:
+            if mode not in cfg or not isinstance(cfg[mode], list):
+                cfg[mode] = defaults[mode]
+        return cfg
+    except:
+        return defaults
+
+def save_macro_config(cfg):
+    try:
+        with open(MACRO_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+macro_config = load_macro_config()
+
 # =========================================================
 #  관리자 설정 (base64)
 # =========================================================
@@ -614,30 +650,112 @@ def get_current_mode(): return work_mode.get()
 # =========================================================
 #  모드 A: 번호 등록
 # =========================================================
+def setup_coord_dynamic(mode):
+    global macro_config
+    cfg = load_macro_config()
+    steps = cfg.get(mode, [])
+    
+    coord_steps = [s for s in steps if s.get("type") in ["click_type", "click_only"]]
+    if not coord_steps:
+        messagebox.showinfo("안내", f"[{mode}] 모드에는 마우스 클릭 좌표를 설정할 단계가 없습니다.")
+        return True
+        
+    messagebox.showinfo("좌표 설정", f"[{mode}] 모드의 마우스 좌표 {len(coord_steps)}개를 순서대로 설정합니다.\n\n각 안내 팝업을 확인하고 5초 이내에 마우스를 위치시켜 주세요.")
+    
+    for i, s in enumerate(coord_steps):
+        title = s.get("name", f"단계 {i+1}")
+        desc = f"[{mode}] {title} 위에 마우스를 올려놓으세요."
+        no = f"({i+1}/{len(coord_steps)})"
+        coord = capture_coord_popup(title, desc, no, 5)
+        if not coord:
+            messagebox.showwarning("취소", "좌표 설정이 취소되었습니다.")
+            return False
+        s["coord"] = coord
+        
+    save_macro_config(cfg)
+    macro_config = cfg
+    
+    try:
+        btn_coord_reset.config(text="🔄 좌표 재설정 (설정됨)")
+    except:
+        pass
+        
+    summary = "\n".join([f"• {s['name']}: {s['coord']}" for s in coord_steps])
+    messagebox.showinfo("🎯 완료", f"[{mode}] 좌표 설정이 완료되었습니다!\n\n{summary}\n\n이제 실행 버튼을 누르세요.")
+    return True
+
 def setup_coord_registration():
-    global coord_input
-    coord_input=capture_coord_popup("📋 받는사람 입력칸","[번호등록 모드] 좌표 1개\n\n받는 사람 입력칸 위에 마우스를 올려놓으세요.","(1/1)",5)
-    btn_coord_reset.config(text="🔄 좌표 재설정 (설정됨)")
-    messagebox.showinfo("📍 완료",f"좌표: {coord_input}\n\n[번호등록 실행]을 누르세요.")
+    return setup_coord_dynamic("번호등록")
+
+def run_macro_for_row(mode, phone_val, msg_val, row_idx):
+    cfg_macro = load_macro_config()
+    steps = cfg_macro.get(mode, [])
+    delay = get_step_delay()
+    prefix = "즉시발송" if row_idx == -2 else f"{row_idx+1}"
+    
+    try:
+        for i, s in enumerate(steps):
+            stype = s.get("type")
+            name = s.get("name", f"단계 {i+1}")
+            coord = s.get("coord")
+            
+            update_status(f"[{prefix}] {name}")
+            
+            if stype == "click_type":
+                if not coord: continue
+                pyautogui.click(*coord); time.sleep(0.3)
+                pyautogui.hotkey(MODIFIER, "a"); time.sleep(0.15)
+                pyautogui.press("backspace"); time.sleep(0.3)
+                
+                vsrc = s.get("value_source", "static")
+                if vsrc == "phone":
+                    val = phone_val
+                elif vsrc == "message":
+                    val = msg_val
+                else:
+                    val = s.get("static_value", "")
+                    
+                safe_input(val); time.sleep(delay)
+                
+            elif stype == "click_only":
+                if not coord: continue
+                pyautogui.click(*coord); time.sleep(0.15)
+                if s.get("press_enter", True):
+                    pyautogui.press("enter")
+                time.sleep(delay)
+                
+            elif stype == "key":
+                key_val = s.get("key_value", "enter")
+                pyautogui.press(key_val); time.sleep(delay)
+                
+            elif stype == "delay":
+                d_val = float(s.get("delay_value", 1.0))
+                time.sleep(d_val)
+                
+        return True
+    except Exception as e:
+        write_log("오류", f"매크로 실행 실패: {e}")
+        return False
 
 def registration_worker():
     global start_index, is_running
     batch=get_batch_size(); end_idx=start_index+batch
     if start_index>=len(data): messagebox.showinfo("완료","등록할 번호가 없습니다."); return
     is_running=True; set_buttons_running(True)
-    pyautogui.click(*coord_input); time.sleep(0.5)
     cnt=0
     for idx in range(start_index,min(end_idx,len(data))):
         if not is_running: break
         while is_paused: time.sleep(0.3)
         num=data.iloc[idx]['전화번호']
         try:
-            update_status(f"[{idx+1}] {num}")
-            pyautogui.write(num); time.sleep(REG_DELAY_INPUT)
-            pyautogui.press("tab"); time.sleep(REG_DELAY_TAB)
-            registered_indices.add(idx); write_log("등록성공",num)
-            write_result_to_excel(idx, "등록완료")
-            cnt+=1
+            ok = run_macro_for_row("번호등록", num, "", idx)
+            if ok:
+                registered_indices.add(idx); write_log("등록성공",num)
+                write_result_to_excel(idx, "등록완료")
+                cnt+=1
+            else:
+                failed_indices.add(idx); write_log("등록실패",num)
+                write_result_to_excel(idx, "등록실패")
         except:
             failed_indices.add(idx); write_log("등록실패",num)
             write_result_to_excel(idx, "등록실패")
@@ -649,51 +767,12 @@ def registration_worker():
     update_status(f"등록 완료: {cnt}개")
     messagebox.showinfo("완료",f"{cnt}개 등록! (누적 {len(registered_indices)}개)")
 
-# =========================================================
-#  모드 B: 문자 발송 (✅ 실패 자동 재시도)
-# =========================================================
 def setup_coord_sms():
-    global coord_msg,coord_phone,coord_send,coord_confirm
-    messagebox.showinfo("💬 문자발송","좌표 4개를 설정합니다.\n① 메시지 ② 받는사람 ③ 발송 ④ 확인")
-    steps=[
-        {"no":"1/4","title":"✏️ 메시지 입력칸","desc":"[문자발송] 메시지 입력창 위에"},
-        {"no":"2/4","title":"📱 받는사람 입력칸","desc":"[문자발송] 전화번호 입력창 위에"},
-        {"no":"3/4","title":"📤 SMS 발송 버튼","desc":"[문자발송] 발송 버튼 위에"},
-        {"no":"4/4","title":"✅ 확인 버튼","desc":"[문자발송] 팝업 확인 버튼 위에"},
-    ]
-    pos=[]
-    for s in steps: pos.append(capture_coord_popup(s['title'],s['desc'],s['no'],5))
-    coord_msg,coord_phone,coord_send,coord_confirm=pos
-    btn_coord_reset.config(text="🔄 좌표 재설정 (설정됨)")
-    messagebox.showinfo("🎯 완료",f"✏️{coord_msg}\n📱{coord_phone}\n📤{coord_send}\n✅{coord_confirm}\n\n[문자발송 실행]을 누르세요.")
+    return setup_coord_dynamic("문자발송")
 
 def sms_send_one(idx, phone, message):
     """1건 발송 시도. 성공=True, 실패=False"""
-    delay=get_step_delay()
-    prefix = "즉시발송" if idx == -2 else f"{idx+1}"
-    try:
-        update_status(f"[{prefix}] ① 메시지 ({phone})")
-        pyautogui.click(*coord_msg); time.sleep(0.3)
-        pyautogui.hotkey(MODIFIER,"a"); time.sleep(0.15)
-        pyautogui.press("backspace"); time.sleep(0.3)
-        safe_input(message); time.sleep(delay)
-
-        update_status(f"[{prefix}] ② 받는사람 ({phone})")
-        pyautogui.click(*coord_phone); time.sleep(0.3)
-        pyautogui.hotkey(MODIFIER,"a"); time.sleep(0.15)
-        pyautogui.press("backspace"); time.sleep(0.3)
-        safe_input(phone); time.sleep(delay)
-
-        update_status(f"[{prefix}] ③ 발송 → {delay}초")
-        pyautogui.click(*coord_send); time.sleep(0.15)
-        pyautogui.press("enter"); time.sleep(delay)
-
-        update_status(f"[{prefix}] ④ 확인 → {delay}초")
-        pyautogui.click(*coord_confirm); time.sleep(0.15)
-        pyautogui.press("enter"); time.sleep(delay)
-        return True
-    except:
-        return False
+    return run_macro_for_row("문자발송", phone, message, idx)
 
 def sms_worker():
     global is_running
@@ -756,11 +835,14 @@ def sms_worker():
 def start_worker():
     mode=get_current_mode()
     if data.empty: messagebox.showwarning("데이터 없음","데이터를 불러오세요."); return
+    cfg_macro = load_macro_config()
+    coord_steps = [s for s in cfg_macro.get(mode, []) if s.get("type") in ["click_type", "click_only"]]
+    if any(s.get("coord") is None for s in coord_steps):
+        if not setup_coord_dynamic(mode):
+            return
     if mode=="번호등록":
-        if not coord_input: setup_coord_registration(); return
         threading.Thread(target=registration_worker,daemon=True).start()
     else:
-        if not all([coord_msg,coord_phone,coord_send,coord_confirm]): setup_coord_sms(); return
         threading.Thread(target=sms_worker,daemon=True).start()
 
 def set_buttons_running(r):
@@ -772,9 +854,19 @@ def set_buttons_running(r):
     root.after(0, update_ui)
 
 def reset_coordinates():
-    global coord_input,coord_msg,coord_phone,coord_send,coord_confirm
-    coord_input=coord_msg=coord_phone=coord_send=coord_confirm=None
-    btn_coord_reset.config(text="🔄 좌표 재설정 (미설정)")
+    global macro_config
+    cfg = load_macro_config()
+    for mode in ["번호등록", "문자발송"]:
+        for s in cfg[mode]:
+            if "coord" in s:
+                s["coord"] = None
+    save_macro_config(cfg)
+    macro_config = cfg
+    try:
+        btn_coord_reset.config(text="🔄 좌표 재설정 (미설정)")
+    except:
+        pass
+    messagebox.showinfo("초기화 완료", "모든 매크로 좌표가 초기화되었습니다.")
 
 def reset_all():
     global is_running,start_index
@@ -794,6 +886,327 @@ def toggle_work_mode():
     else:
         reg_opts_frame.pack_forget(); sms_opts_frame.pack(fill=tk.X,pady=(0,5),after=mode_frame)
         btn_start.config(text="▶ 문자발송 실행")
+
+# =========================================================
+#  매크로 단계 커스텀 빌더
+# =========================================================
+def open_step_builder_panel():
+    win = tk.Toplevel(root)
+    win.title("🛠️ 매크로 단계 커스텀 빌더")
+    win.geometry("750x640")
+    win.configure(bg=COLOR_NAVY)
+    win.attributes("-topmost", True)
+    win.resizable(False, False)
+    
+    tk.Label(win, text="🛠️ 매크로 단계 커스텀 설정", font=FONT_TITLE, bg=COLOR_NAVY, fg="white", pady=15).pack(fill=tk.X)
+    
+    bd = tk.Frame(win, bg="#f8fafc", padx=15, pady=15)
+    bd.pack(fill=tk.BOTH, expand=True)
+    
+    mode_frame = tk.Frame(bd, bg="#f8fafc")
+    mode_frame.pack(fill=tk.X, pady=(0, 10))
+    tk.Label(mode_frame, text="⚙️ 작업 모드 선택:", font=FONT_BOLD_10, bg="#f8fafc", fg="#1e293b").pack(side=tk.LEFT, padx=5)
+    
+    selected_mode = tk.StringVar(value="문자발송")
+    
+    tree_frame = tk.Frame(bd, bg="#f8fafc")
+    tree_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+    
+    scrollbar = tk.Scrollbar(tree_frame, orient="vertical")
+    tree = ttk.Treeview(tree_frame, columns=("no", "name", "type", "coord", "val"), show="headings", yscrollcommand=scrollbar.set, style="Treeview")
+    scrollbar.config(command=tree.yview)
+    
+    tree.heading("no", text="No")
+    tree.heading("name", text="단계 이름")
+    tree.heading("type", text="동작 유형")
+    tree.heading("coord", text="마우스 좌표")
+    tree.heading("val", text="값/설정")
+    
+    tree.column("no", width=40, anchor="center")
+    tree.column("name", width=180)
+    tree.column("type", width=100, anchor="center")
+    tree.column("coord", width=120, anchor="center")
+    tree.column("val", width=180)
+    
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    cfg_working = load_macro_config()
+    
+    def refresh_tree():
+        for item in tree.get_children():
+            tree.delete(item)
+        
+        mode = selected_mode.get()
+        steps = cfg_working.get(mode, [])
+        for idx, s in enumerate(steps):
+            stype = s.get("type")
+            stype_kr = {
+                "click_type": "클릭 후 입력",
+                "click_only": "단독 클릭",
+                "key": "키 입력",
+                "delay": "대기 시간"
+            }.get(stype, stype)
+            
+            coord_str = f"({s['coord'][0]}, {s['coord'][1]})" if s.get("coord") else "미설정"
+            
+            if stype == "click_type":
+                vsrc = s.get("value_source", "static")
+                vsrc_kr = {"phone": "엑셀 전화번호", "message": "엑셀 발송문구", "static": "고정 텍스트"}.get(vsrc, vsrc)
+                if vsrc == "static":
+                    val_str = f"고정: '{s.get('static_value', '')}'"
+                else:
+                    val_str = vsrc_kr
+            elif stype == "click_only":
+                val_str = "Enter 입력" if s.get("press_enter", True) else "클릭만"
+            elif stype == "key":
+                val_str = f"키: '{s.get('key_value', 'enter')}'"
+            elif stype == "delay":
+                val_str = f"{s.get('delay_value', 1.0)}초 대기"
+            else:
+                val_str = ""
+                
+            tree.insert("", tk.END, values=(idx + 1, s.get("name", ""), stype_kr, coord_str, val_str))
+            
+    btn_side_frame = tk.Frame(bd, bg="#f8fafc")
+    btn_side_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0), pady=5)
+    
+    prop_frame = tk.LabelFrame(bd, text=" 📝 선택한 단계 속성 편집 ", font=FONT_BOLD_10, bg="#f8fafc", fg=COLOR_NAVY, bd=1, relief="solid", padx=10, pady=8)
+    prop_frame.pack(fill=tk.X, pady=10)
+    
+    tk.Label(prop_frame, text="단계 이름:", font=FONT_REG_10, bg="#f8fafc", fg="#475569").grid(row=0, column=0, sticky="w", pady=2)
+    name_var = tk.StringVar()
+    name_entry = tk.Entry(prop_frame, textvariable=name_var, font=FONT_REG_10, width=20, bd=1, relief="solid")
+    name_entry.grid(row=0, column=1, sticky="w", pady=2, padx=5)
+    
+    tk.Label(prop_frame, text="동작 유형:", font=FONT_REG_10, bg="#f8fafc", fg="#475569").grid(row=0, column=2, sticky="w", pady=2, padx=(15, 0))
+    type_var = tk.StringVar(value="click_type")
+    type_combo = ttk.Combobox(prop_frame, textvariable=type_var, values=["클릭 후 입력", "단독 클릭", "키 입력", "대기 시간"], state="readonly", width=12, style="TCombobox")
+    type_combo.grid(row=0, column=3, sticky="w", pady=2, padx=5)
+    
+    opts_sub_frame = tk.Frame(prop_frame, bg="#f8fafc")
+    opts_sub_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=5)
+    
+    lbl_vsrc = tk.Label(opts_sub_frame, text="입력값 종류:", font=FONT_REG_10, bg="#f8fafc", fg="#475569")
+    vsrc_var = tk.StringVar(value="message")
+    combo_vsrc = ttk.Combobox(opts_sub_frame, textvariable=vsrc_var, values=["엑셀 발송문구", "엑셀 전화번호", "직접 지정"], state="readonly", width=15, style="TCombobox")
+    
+    lbl_static = tk.Label(opts_sub_frame, text="고정 텍스트:", font=FONT_REG_10, bg="#f8fafc", fg="#475569")
+    static_var = tk.StringVar()
+    entry_static = tk.Entry(opts_sub_frame, textvariable=static_var, font=FONT_REG_10, width=25, bd=1, relief="solid")
+    
+    enter_var = tk.BooleanVar(value=True)
+    chk_enter = tk.Checkbutton(opts_sub_frame, text="클릭 후 Enter 키 입력 (팝업 확인용)", variable=enter_var, font=FONT_REG_10, bg="#f8fafc", activebackground="#f8fafc", selectcolor="#f8fafc")
+    
+    lbl_key = tk.Label(opts_sub_frame, text="키 종류:", font=FONT_REG_10, bg="#f8fafc", fg="#475569")
+    key_var = tk.StringVar(value="enter")
+    combo_key = ttk.Combobox(opts_sub_frame, textvariable=key_var, values=["enter", "tab", "backspace", "escape", "space", "up", "down"], width=10, style="TCombobox")
+    
+    lbl_delay = tk.Label(opts_sub_frame, text="대기 시간 (초):", font=FONT_REG_10, bg="#f8fafc", fg="#475569")
+    delay_val_var = tk.StringVar(value="1.0")
+    spin_delay = tk.Spinbox(opts_sub_frame, from_=0.1, to=10.0, increment=0.1, textvariable=delay_val_var, width=6, font=FONT_BOLD_10, justify="center", bd=1, relief="solid")
+
+    def hide_all_options():
+        for widget in opts_sub_frame.winfo_children():
+            widget.pack_forget()
+            widget.grid_forget()
+            
+    def show_options_for_type(*args):
+        hide_all_options()
+        t = type_var.get()
+        if t == "클릭 후 입력":
+            lbl_vsrc.grid(row=0, column=0, sticky="w", pady=2)
+            combo_vsrc.grid(row=0, column=1, sticky="w", pady=2, padx=5)
+            show_static_field()
+        elif t == "단독 클릭":
+            chk_enter.grid(row=0, column=0, sticky="w", pady=2)
+        elif t == "키 입력":
+            lbl_key.grid(row=0, column=0, sticky="w", pady=2)
+            combo_key.grid(row=0, column=1, sticky="w", pady=2, padx=5)
+        elif t == "대기 시간":
+            lbl_delay.grid(row=0, column=0, sticky="w", pady=2)
+            spin_delay.grid(row=0, column=1, sticky="w", pady=2, padx=5)
+            
+    def show_static_field(*args):
+        v = vsrc_var.get()
+        if v == "직접 지정":
+            lbl_static.grid(row=0, column=2, sticky="w", pady=2, padx=(15, 0))
+            entry_static.grid(row=0, column=3, sticky="w", pady=2, padx=5)
+        else:
+            lbl_static.grid_forget()
+            entry_static.grid_forget()
+            
+    type_combo.bind("<<ComboboxSelected>>", show_options_for_type)
+    combo_vsrc.bind("<<ComboboxSelected>>", show_static_field)
+    
+    def on_tree_select(event):
+        sel = tree.selection()
+        if not sel: return
+        idx = tree.index(sel[0])
+        mode = selected_mode.get()
+        steps = cfg_working.get(mode, [])
+        if idx >= len(steps): return
+        s = steps[idx]
+        
+        name_var.set(s.get("name", ""))
+        stype = s.get("type", "click_type")
+        stype_kr = {"click_type": "클릭 후 입력", "click_only": "단독 클릭", "key": "키 입력", "delay": "대기 시간"}.get(stype, "클릭 후 입력")
+        type_var.set(stype_kr)
+        
+        show_options_for_type()
+        
+        if stype == "click_type":
+            vsrc = s.get("value_source", "message")
+            vsrc_kr = {"message": "엑셀 발송문구", "phone": "엑셀 전화번호", "static": "직접 지정"}.get(vsrc, "엑셀 발송문구")
+            vsrc_var.set(vsrc_kr)
+            static_var.set(s.get("static_value", ""))
+            show_static_field()
+        elif stype == "click_only":
+            enter_var.set(s.get("press_enter", True))
+        elif stype == "key":
+            key_var.set(s.get("key_value", "enter"))
+        elif stype == "delay":
+            delay_val_var.set(str(s.get("delay_value", 1.0)))
+            
+    tree.bind("<<TreeviewSelect>>", on_tree_select)
+    
+    def apply_properties():
+        sel = tree.selection()
+        if not sel: return
+        idx = tree.index(sel[0])
+        mode = selected_mode.get()
+        steps = cfg_working.get(mode, [])
+        if idx >= len(steps): return
+        s = steps[idx]
+        
+        s["name"] = name_var.get().strip() or f"단계 {idx+1}"
+        tk_type = type_var.get()
+        stype = {"클릭 후 입력": "click_type", "단독 클릭": "click_only", "키 입력": "key", "대기 시간": "delay"}.get(tk_type, "click_type")
+        s["type"] = stype
+        
+        if stype == "click_type":
+            tk_vsrc = vsrc_var.get()
+            vsrc = {"엑셀 발송문구": "message", "엑셀 전화번호": "phone", "직접 지정": "static"}.get(tk_vsrc, "message")
+            s["value_source"] = vsrc
+            s["static_value"] = static_var.get().strip()
+            if "coord" not in s: s["coord"] = None
+        elif stype == "click_only":
+            s["press_enter"] = enter_var.get()
+            if "coord" not in s: s["coord"] = None
+        elif stype == "key":
+            s["key_value"] = combo_key.get().strip() or "enter"
+            if "coord" in s: del s["coord"]
+        elif stype == "delay":
+            try: s["delay_value"] = float(delay_val_var.get())
+            except: s["delay_value"] = 1.0
+            if "coord" in s: del s["coord"]
+            
+        refresh_tree()
+        items = tree.get_children()
+        if idx < len(items):
+            tree.selection_set(items[idx])
+            
+    create_btn(prop_frame, "✔️ 설정 변경 적용", apply_properties, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_9).grid(row=0, column=4, rowspan=2, sticky="ns", padx=(10, 0))
+    
+    def move_step(direction):
+        sel = tree.selection()
+        if not sel: return
+        idx = tree.index(sel[0])
+        mode = selected_mode.get()
+        steps = cfg_working.get(mode, [])
+        
+        new_idx = idx + direction
+        if new_idx < 0 or new_idx >= len(steps): return
+        
+        steps[idx], steps[new_idx] = steps[new_idx], steps[idx]
+        refresh_tree()
+        tree.selection_set(tree.get_children()[new_idx])
+        
+    def add_step():
+        mode = selected_mode.get()
+        steps = cfg_working.get(mode, [])
+        new_step = {"type": "click_type", "name": f"새 단계 {len(steps)+1}", "coord": None, "value_source": "message"}
+        steps.append(new_step)
+        refresh_tree()
+        items = tree.get_children()
+        if items:
+            tree.selection_set(items[-1])
+            
+    def delete_step():
+        sel = tree.selection()
+        if not sel: return
+        idx = tree.index(sel[0])
+        mode = selected_mode.get()
+        steps = cfg_working.get(mode, [])
+        if idx >= len(steps): return
+        
+        del steps[idx]
+        refresh_tree()
+        items = tree.get_children()
+        if items:
+            tree.selection_set(items[min(idx, len(items)-1)])
+            
+    def capture_coord_selected():
+        sel = tree.selection()
+        if not sel:
+            messagebox.showwarning("선택 필요", "좌표를 설정할 단계를 선택하세요.", parent=win)
+            return
+        idx = tree.index(sel[0])
+        mode = selected_mode.get()
+        steps = cfg_working.get(mode, [])
+        s = steps[idx]
+        
+        if s.get("type") not in ["click_type", "click_only"]:
+            messagebox.showwarning("좌표 불필요", "마우스 클릭이 필요한 단계만 좌표 설정이 가능합니다.", parent=win)
+            return
+            
+        title = s.get("name", "좌표 설정")
+        desc = f"[{mode}] {title} 위에 마우스를 올려놓으세요."
+        
+        win.attributes("-topmost", False)
+        coord = capture_coord_popup(title, desc, "(1/1)", 5)
+        win.attributes("-topmost", True)
+        
+        if coord:
+            s["coord"] = coord
+            refresh_tree()
+            tree.selection_set(tree.get_children()[idx])
+            messagebox.showinfo("완료", f"'{title}' 좌표가 {coord}로 설정되었습니다.", parent=win)
+
+    create_btn(btn_side_frame, "🔼 위로", lambda: move_step(-1), "#475569", "#334155", width=12).pack(pady=2)
+    create_btn(btn_side_frame, "🔽 아래로", lambda: move_step(1), "#475569", "#334155", width=12).pack(pady=2)
+    create_btn(btn_side_frame, "📍 좌표 설정", capture_coord_selected, COLOR_PRIMARY, COLOR_PRIMARY_HOVER, width=12).pack(pady=10)
+    create_btn(btn_side_frame, "➕ 단계 추가", add_step, COLOR_INFO, COLOR_INFO_HOVER, width=12).pack(pady=2)
+    create_btn(btn_side_frame, "🗑️ 단계 삭제", delete_step, COLOR_DANGER, COLOR_DANGER_HOVER, width=12).pack(pady=2)
+    
+    def save_and_close():
+        save_macro_config(cfg_working)
+        global macro_config
+        macro_config = cfg_working
+        try:
+            reg_set = all(s.get("coord") is not None for s in cfg_working["번호등록"] if s.get("type") in ["click_type", "click_only"])
+            sms_set = all(s.get("coord") is not None for s in cfg_working["문자발송"] if s.get("type") in ["click_type", "click_only"])
+            if reg_set and sms_set:
+                btn_coord_reset.config(text="🔄 좌표 재설정 (설정됨)")
+            else:
+                btn_coord_reset.config(text="🔄 좌표 재설정 (미설정)")
+        except:
+            pass
+        messagebox.showinfo("저장 완료", "매크로 단계 설정이 파일에 저장되었습니다.", parent=win)
+        win.destroy()
+        
+    bottom_frame = tk.Frame(bd, bg="#f8fafc")
+    bottom_frame.pack(fill=tk.X, pady=(10, 0))
+    create_btn(bottom_frame, "💾 설정 파일 저장", save_and_close, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, width=15).pack(side=tk.LEFT)
+    create_btn(bottom_frame, "닫기 (취소)", win.destroy, "#94a3b8", "#64748b", width=10).pack(side=tk.RIGHT)
+    
+    tk.Radiobutton(mode_frame, text="📋 번호등록 단계", variable=selected_mode, value="번호등록", command=refresh_tree, font=FONT_BOLD_10, bg="#f8fafc", fg="#1e293b", activebackground="#f8fafc", selectcolor="#f8fafc").pack(side=tk.LEFT, padx=15)
+    tk.Radiobutton(mode_frame, text="💬 문자발송 단계", variable=selected_mode, value="문자발송", command=refresh_tree, font=FONT_BOLD_10, bg="#f8fafc", fg="#1e293b", activebackground="#f8fafc", selectcolor="#f8fafc").pack(side=tk.LEFT)
+    
+    refresh_tree()
+    show_options_for_type()
+    if tree.get_children():
+        tree.selection_set(tree.get_children()[0])
 
 # =========================================================
 #  관리자 패널
@@ -828,8 +1241,48 @@ def open_admin_panel():
     
     # 디스코드 웹훅 입력 필드 추가
     tk.Label(bd,text="📢 디스코드 실시간 알림 웹훅 URL",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w", pady=(0, 4))
+    dw_frame = tk.Frame(bd, bg="#f8fafc")
+    dw_frame.pack(fill=tk.X, pady=(0,15))
     dv=tk.StringVar(value=cfg.get("discord_webhook",""))
-    tk.Entry(bd,textvariable=dv,font=FONT_REG_10,width=50,bd=1,relief="solid").pack(anchor="w",pady=(0,15))
+    tk.Entry(dw_frame,textvariable=dv,font=FONT_REG_10,width=38,bd=1,relief="solid").pack(side=tk.LEFT, ipady=2)
+    
+    def test_discord_webhook():
+        webhook_url = dv.get().strip()
+        if not webhook_url:
+            messagebox.showwarning("입력 필요", "디스코드 웹훅 URL을 먼저 입력해 주세요.", parent=win)
+            return
+            
+        test_payload = {
+            "embeds": [{
+                "title": "🧪 CIS Discord Webhook Test Connection",
+                "description": "디스코드 알림 연동 테스트가 성공적으로 완료되었습니다!",
+                "color": 0x2ecc71,  # Green
+                "fields": [
+                    {"name": "테스트 시간", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "inline": True},
+                    {"name": "접속 PC", "value": pc, "inline": True}
+                ],
+                "footer": {"text": "Real-time Monitoring System Test"}
+            }]
+        }
+        
+        def test_worker():
+            try:
+                import urllib.request
+                import json
+                req = urllib.request.Request(
+                    webhook_url,
+                    data=json.dumps(test_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "User-Agent": "urllib-discord-bot"}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    pass
+                win.after(0, lambda: messagebox.showinfo("성공", "디스코드 테스트 메세지가 전송되었습니다.\n디스코드 채널을 확인하세요.", parent=win))
+            except Exception as e:
+                win.after(0, lambda: messagebox.showerror("실패", f"디스코드 웹훅 전송 실패:\n{e}", parent=win))
+                
+        threading.Thread(target=test_worker, daemon=True).start()
+
+    create_btn(dw_frame, "🧪 테스트 전송", test_discord_webhook, COLOR_INFO, COLOR_INFO_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT, padx=(5,0))
     
     tk.Label(bd,text="📊 프로그램 사용 이력 모니터링",font=FONT_BOLD_10,bg="#f8fafc",fg="#1e293b").pack(anchor="w",pady=(5,5))
     bf=tk.Frame(bd,bg="#f8fafc"); bf.pack(fill=tk.X, pady=(0,15))
@@ -925,8 +1378,10 @@ def quick_send_action():
             return
         phone = phone.zfill(11)
         
-        if not all([coord_msg, coord_phone, coord_send, coord_confirm]):
-            messagebox.showwarning("좌표 미설정", "문자발송을 위한 좌표 4개가 모두 설정되지 않았습니다.\n먼저 [문자발송]에서 좌표 설정을 진행해 주세요.")
+        cfg_macro = load_macro_config()
+        coord_steps = [s for s in cfg_macro.get("문자발송", []) if s.get("type") in ["click_type", "click_only"]]
+        if any(s.get("coord") is None for s in coord_steps):
+            messagebox.showwarning("좌표 미설정", "문자발송을 위한 좌표가 설정되지 않았습니다.\n먼저 [문자발송]에서 좌표 설정을 진행해 주세요.")
             setup_coord_sms()
             return
             
@@ -958,6 +1413,16 @@ def create_gui():
     root=tk.Tk(); root.title("📱 CIS 통합 매크로 — 번호등록 + 문자발송")
     root.geometry("1200x920" if IS_MAC else "1200x950")
     root.configure(bg=BG_MAIN)
+
+    if IS_MAC:
+        root.bind_class("Entry", "<Command-c>", lambda e: e.widget.event_generate("<<Copy>>"))
+        root.bind_class("Entry", "<Command-v>", lambda e: e.widget.event_generate("<<Paste>>"))
+        root.bind_class("Entry", "<Command-x>", lambda e: e.widget.event_generate("<<Cut>>"))
+        root.bind_class("Entry", "<Command-a>", lambda e: e.widget.select_range(0, tk.END) or "break")
+        root.bind_class("Text", "<Command-c>", lambda e: e.widget.event_generate("<<Copy>>"))
+        root.bind_class("Text", "<Command-v>", lambda e: e.widget.event_generate("<<Paste>>"))
+        root.bind_class("Text", "<Command-x>", lambda e: e.widget.event_generate("<<Cut>>"))
+        root.bind_class("Text", "<Command-a>", lambda e: e.widget.tag_add("sel", "1.0", "end") or "break")
 
     # ttk 스타일 재지정 (clam 테마 활성화 및 각 컴포넌트 세팅)
     style = ttk.Style()
@@ -1005,6 +1470,7 @@ def create_gui():
         except: pass
         
     create_btn(tf, "🔧 관리자 설정", open_admin_panel, "#334155", "#475569", fg_color="#f8fafc", font=FONT_BOLD_9).pack(side=tk.RIGHT,padx=15,pady=8)
+    create_btn(tf, "🛠️ 매크로 단계 설정", open_step_builder_panel, "#0f766e", "#115e59", fg_color="#f8fafc", font=FONT_BOLD_9).pack(side=tk.RIGHT,padx=5,pady=8)
 
     # 1. 데이터 소스 및 등록 (White Card Style)
     lf=tk.LabelFrame(root,text=" 1. 데이터 소스 및 연락처 등록 ",font=FONT_BOLD_11,bg=BG_CARD,fg=COLOR_NAVY,bd=1,relief="solid",padx=15,pady=10)
@@ -1162,7 +1628,11 @@ def create_gui():
     
     tk.Frame(ct,width=10,bg=BG_MAIN).pack(side=tk.LEFT)
     
-    btn_coord_reset=create_btn(ct, "🔄 좌표 재설정", reset_coordinates, COLOR_MUTED, COLOR_MUTED_HOVER, font=FONT_BOLD_10)
+    cfg_macro = load_macro_config()
+    reg_set = all(s.get("coord") is not None for s in cfg_macro["번호등록"] if s.get("type") in ["click_type", "click_only"])
+    sms_set = all(s.get("coord") is not None for s in cfg_macro["문자발송"] if s.get("type") in ["click_type", "click_only"])
+    btn_text = "🔄 좌표 재설정 (설정됨)" if (reg_set and sms_set) else "🔄 좌표 재설정 (미설정)"
+    btn_coord_reset=create_btn(ct, btn_text, reset_coordinates, COLOR_MUTED, COLOR_MUTED_HOVER, font=FONT_BOLD_10)
     btn_coord_reset.pack(side=tk.LEFT,padx=3)
     
     create_btn(ct, "↺ 리스트 초기화", reset_all, "#94a3b8", "#64748b", font=FONT_BOLD_10).pack(side=tk.LEFT,padx=3)
