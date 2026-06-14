@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIS 문자 발송 매크로 - 프리미엄 자동화 솔루션</title>
+    <meta name="description" content="Windows 및 macOS를 완벽 지원하는 단체 및 개별 선택 문자 발송 매크로 프로그램 다운로드 및 가이드 페이지">
+    
+    <!-- Pretendard Web Font -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+    
+    <style>
+        :root {
+            --navy: #0f172a;
+            --blue: #2563eb;
+            --blue-hover: #1d4ed8;
+            --slate-bg: #f8fafc;
+            --slate-border: #cbd5e1;
+            --text-dark: #0f172a;
+            --text-muted: #64748b;
+            --card-bg: #ffffff;
+            --emerald: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+        }
+
+        body {
+            background-color: var(--slate-bg);
+            color: var(--text-dark);
+            line-height: 1.6;
+        }
+
+        /* Header / Hero Section */
+        .hero {
+            background: linear-gradient(135deg, var(--navy) 0%, #1e293b 100%);
+            color: white;
+            padding: 80px 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::after {
+            content: '';
+            position: absolute;
+            bottom: -50px;
+            left: 0;
+            width: 100%;
+            height: 100px;
+            background: var(--slate-bg);
+            transform: skewY(-2deg);
+        }
+
+        .hero-container {
+            max-width: 900px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .badge {
+            background-color: rgba(37, 99, 235, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(37, 99, 235, 0.3);
+            padding: 6px 14px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            display: inline-block;
+            margin-bottom: 20px;
+            letter-spacing: 0.5px;
+        }
+
+        .hero h1 {
+            font-size: 2.8rem;
+            font-weight: 800;
+            margin-bottom: 15px;
+            letter-spacing: -0.5px;
+            line-height: 1.2;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: #94a3b8;
+            margin-bottom: 40px;
+            font-weight: 400;
+        }
+
+        /* Buttons */
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 28px;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: 12px;
+            text-decoration: none;
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-primary {
+            background-color: var(--blue);
+            color: white;
+            border: 1px solid var(--blue);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--blue-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-secondary {
+            background-color: transparent;
+            color: #cbd5e1;
+            border: 1px solid rgba(203, 213, 225, 0.3);
+        }
+
+        .btn-secondary:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-color: white;
+            transform: translateY(-2px);
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* Features Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-top: 40px;
+            margin-bottom: 60px;
+        }
+
+        .feature-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--slate-border);
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+            border-color: var(--blue);
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 15px;
+        }
+
+        .feature-card h3 {
+            font-size: 1.2rem;
+            font-weight: 750;
+            margin-bottom: 10px;
+            color: var(--navy);
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* Guide Section */
+        .guide-section {
+            background-color: var(--card-bg);
+            border: 1px solid var(--slate-border);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 60px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+        }
+
+        .guide-section h2 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            margin-bottom: 25px;
+            color: var(--navy);
+            border-left: 5px solid var(--blue);
+            padding-left: 15px;
+        }
+
+        .step {
+            display: flex;
+            margin-bottom: 30px;
+        }
+
+        .step:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-num {
+            background-color: rgba(37, 99, 235, 0.1);
+            color: var(--blue);
+            font-weight: 800;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 20px;
+            flex-shrink: 0;
+            font-size: 1.1rem;
+        }
+
+        .step-content h3 {
+            font-size: 1.15rem;
+            font-weight: 750;
+            margin-bottom: 8px;
+            color: var(--navy);
+        }
+
+        .step-content p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+        }
+
+        code {
+            background-color: #f1f5f9;
+            color: #ef4444;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-family: Consolas, Monaco, monospace;
+            font-size: 0.9rem;
+            border: 1px solid #e2e8f0;
+        }
+
+        pre {
+            background-color: var(--navy);
+            color: #38bdf8;
+            padding: 16px;
+            border-radius: 10px;
+            font-family: Consolas, Monaco, monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 10px 0;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px solid var(--slate-border);
+            background-color: var(--card-bg);
+        }
+
+        footer a {
+            color: var(--blue);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.2rem;
+            }
+            .hero p {
+                font-size: 1.1rem;
+            }
+            .btn {
+                width: 100%;
+            }
+            .guide-section {
+                padding: 25px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Hero Section -->
+    <header class="hero">
+        <div class="hero-container">
+            <span class="badge">Windows & macOS 완벽 지원</span>
+            <h1>CIS 통합 문자 발송 매크로</h1>
+            <p>번호등록부터 문자 발송까지, 수작업 없는 프리미엄 자동화 매크로 프로그램</p>
+            <div class="btn-group">
+                <a href="https://github.com/heebonpark/CIS_SMS_KTT/archive/refs/heads/main.zip" class="btn btn-primary">⚡ 프로그램 다운로드 (ZIP)</a>
+                <a href="https://github.com/heebonpark/CIS_SMS_KTT" class="btn btn-secondary">💾 GitHub 소스코드 보기</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container">
+
+        <!-- Features -->
+        <section class="features">
+            <div class="feature-card">
+                <div class="feature-icon">💻</div>
+                <h3>크로스 플랫폼 지원</h3>
+                <p>맥북의 Command 단축키와 윈도우의 Ctrl 단축키를 자동 분기 처리하여 양대 OS 환경 어디서나 완벽하게 구동됩니다.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎨</div>
+                <h3>프리미엄 커스텀 UI</h3>
+                <p>맥북 Aqua 테마 오류를 개선한 <code>LabelButton</code> 설계로 고대비 가시성이 뛰어난 프리미엄 Slate/Navy 디자인을 제공합니다.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>단건 즉시 발송</h3>
+                <p>대기 리스트 빌드 필요 없이 화면 내에서 개별 연락처와 문구를 즉시 마우스 좌표 연동 매크로로 송출할 수 있습니다.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>엑셀 실시간 기록</h3>
+                <p>발송이 처리될 때마다 백그라운드에서 동작하여 연동된 active 엑셀 시트 D열에 성공/실패 여부를 실시간으로 기재합니다.</p>
+            </div>
+        </section>
+
+        <!-- Installation Guide -->
+        <section class="guide-section">
+            <h2>설치 및 실행 가이드 (Quick Start)</h2>
+            
+            <div class="step">
+                <div class="step-num">1</div>
+                <div class="step-content">
+                    <h3>프로그램 다운로드 및 압축 해제</h3>
+                    <p>우측 상단의 다운로드 버튼을 눌러 ZIP 파일을 다운로드하고, 원하는 폴더에 압축을 풉니다.</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">2</div>
+                <div class="step-content">
+                    <h3>필수 패키지 설치</h3>
+                    <p>명령 프롬프트(Windows) 또는 터미널(macOS)을 열어 압축 해제한 폴더로 이동한 뒤, 아래 패키지 설치 명령어를 입력합니다.</p>
+                    <pre>pip install pandas pyautogui pyperclip xlwings openpyxl</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">3</div>
+                <div class="step-content">
+                    <h3>프로그램 실행</h3>
+                    <p>터미널에 아래 구동 명령을 작성하여 매크로 프로그램을 시작합니다.</p>
+                    <p><strong>macOS 사용자:</strong></p>
+                    <pre>python3 app.py</pre>
+                    <p><strong>Windows 사용자:</strong></p>
+                    <pre>python app.py</pre>
+                    <p>초기 보안 실행 비밀번호는 <code>0303</code>입니다.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <p>Copyright &copy; 2026 세은아빠 (<a href="mailto:bough38@naver.com">bough38@naver.com</a>). All rights reserved.</p>
+        <p style="margin-top: 5px; font-size: 0.8rem; color: #94a3b8;">본 프로그램의 소스코드는 무단 배포 및 상업적 변형이 금지됩니다.</p>
+    </footer>
+
+</body>
+</html>
