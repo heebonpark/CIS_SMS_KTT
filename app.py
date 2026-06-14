@@ -810,17 +810,77 @@ def verify_password():
     is_valid = False
     auth_method = "로컬"
     
+    # 🔍 기기 식별 정보
+    pc, user = get_user_info()
+    ext_ip = ""
+    
     if remote_url and remote_url.startswith("http"):
         try:
             import urllib.request
             import json
+            
+            # 🌐 기기 외부 IP 빠른 조회 (1.5초 타임아웃)
+            try:
+                ip_req = urllib.request.Request("http://ip-api.com/json/", headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(ip_req, timeout=1.5) as ip_resp:
+                    ip_data = json.loads(ip_resp.read().decode("utf-8"))
+                    ext_ip = ip_data.get("query", "")
+            except:
+                pass
+                
             req = urllib.request.Request(
                 remote_url,
                 headers={"User-Agent": "Mozilla/5.0"}
             )
             with urllib.request.urlopen(req, timeout=5) as response:
                 content = response.read().decode("utf-8")
-                allowed_pws = [line.strip() for line in content.splitlines() if line.strip()]
+                
+                allowed_pws = []
+                blacklisted_devices = []
+                in_blacklist = False
+                
+                for line in content.splitlines():
+                    line_clean = line.strip()
+                    if not line_clean or line_clean.startswith("#"):
+                        continue
+                    if line_clean.upper() == "[BLACKLIST]":
+                        in_blacklist = True
+                        continue
+                        
+                    if in_blacklist:
+                        blacklisted_devices.append(line_clean)
+                    else:
+                        allowed_pws.append(line_clean)
+                
+                # 🚫 블랙리스트에 걸렸는지 검사
+                device_id = f"{pc}/{user}".strip()
+                is_blocked = False
+                matched_block = ""
+                
+                for b in blacklisted_devices:
+                    b_clean = b.strip()
+                    if not b_clean: continue
+                    # PC명/사용자명 또는 각각의 이름 검사 (대소문자 무시)
+                    if b_clean.lower() in [device_id.lower(), pc.lower(), user.lower()]:
+                        is_blocked = True
+                        matched_block = b_clean
+                        break
+                    # IP 주소 매칭 검사
+                    if ext_ip and b_clean == ext_ip:
+                        is_blocked = True
+                        matched_block = ext_ip
+                        break
+                        
+                if is_blocked:
+                    messagebox.showerror("🚫 접근 차단됨", 
+                                         f"비인가 기기 또는 비정상적인 접근으로 인해 사용이 차단되었습니다.\n\n"
+                                         f"기기 식별자: {pc}/{user}\n"
+                                         f"IP 주소: {ext_ip or '확인 불가'}\n\n"
+                                         f"관리자에게 문의하시기 바랍니다.")
+                    write_usage_log("접속 차단", f"블랙리스트 기기 ({matched_block}) 차단")
+                    root_auth.destroy()
+                    return False
+                
                 if pw in allowed_pws:
                     is_valid = True
                     auth_method = "원격 웹"
