@@ -1232,9 +1232,48 @@ def open_step_builder_panel():
         messagebox.showinfo("저장 완료", "매크로 단계 설정이 파일에 저장되었습니다.", parent=win)
         win.destroy()
         
+    def export_preset():
+        path = filedialog.asksaveasfilename(
+            parent=win,
+            title="매크로 프리셋 내보내기",
+            initialdir=APP_DIR,
+            defaultextension=".json",
+            filetypes=[("JSON Files", "*.json")]
+        )
+        if path:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(cfg_working, f, ensure_ascii=False, indent=2)
+                messagebox.showinfo("성공", "프리셋 파일이 성공적으로 저장되었습니다.", parent=win)
+            except Exception as e:
+                messagebox.showerror("오류", f"프리셋 내보내기 실패: {e}", parent=win)
+
+    def import_preset():
+        path = filedialog.askopenfilename(
+            parent=win,
+            title="매크로 프리셋 가져오기",
+            initialdir=APP_DIR,
+            filetypes=[("JSON Files", "*.json")]
+        )
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    imported = json.load(f)
+                for mode in ["번호등록", "문자발송"]:
+                    if mode not in imported or not isinstance(imported[mode], list):
+                        raise ValueError("올바른 매크로 프리셋 형식이 아닙니다.")
+                for k in imported:
+                    cfg_working[k] = imported[k]
+                refresh_tree()
+                messagebox.showinfo("성공", "프리셋 파일을 성공적으로 불러왔습니다.\n[💾 설정 파일 저장]을 눌러 적용하세요.", parent=win)
+            except Exception as e:
+                messagebox.showerror("오류", f"프리셋 가져오기 실패: {e}", parent=win)
+
     bottom_frame = tk.Frame(bd, bg="#f8fafc")
     bottom_frame.pack(fill=tk.X, pady=(10, 0))
-    create_btn(bottom_frame, "💾 설정 파일 저장", save_and_close, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, width=15).pack(side=tk.LEFT)
+    create_btn(bottom_frame, "💾 설정 파일 저장", save_and_close, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, width=15).pack(side=tk.LEFT, padx=2)
+    create_btn(bottom_frame, "📤 프리셋 내보내기", export_preset, COLOR_INFO, COLOR_INFO_HOVER, width=15).pack(side=tk.LEFT, padx=2)
+    create_btn(bottom_frame, "📥 프리셋 가져오기", import_preset, COLOR_PRIMARY, COLOR_PRIMARY_HOVER, width=15).pack(side=tk.LEFT, padx=2)
     create_btn(bottom_frame, "닫기 (취소)", win.destroy, "#94a3b8", "#64748b", width=10).pack(side=tk.RIGHT)
     
     tk.Radiobutton(mode_frame, text="📋 번호등록 단계", variable=selected_mode, value="번호등록", command=refresh_tree, font=FONT_BOLD_10, bg="#f8fafc", fg="#1e293b", activebackground="#f8fafc", selectcolor="#f8fafc").pack(side=tk.LEFT, padx=15)
