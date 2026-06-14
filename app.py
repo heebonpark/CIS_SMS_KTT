@@ -107,6 +107,7 @@ ADMIN_PW_HASH = hashlib.sha256("admin0303".encode()).hexdigest()
 # ── 전역 변수 ──
 registered_indices = set()
 failed_indices = set()
+completion_times = {}  # 발송 완료 시각 저장용
 is_paused = False
 is_running = False
 coord_input = coord_msg = coord_phone = coord_send = coord_confirm = None
@@ -129,7 +130,12 @@ def load_macro_config():
             {"type": "click_type", "name": "② 받는사람 입력칸", "coord": None, "value_source": "phone"},
             {"type": "click_only", "name": "③ SMS 발송 버튼", "coord": None},
             {"type": "click_only", "name": "④ 확인 버튼", "coord": None}
-        ]
+        ],
+        "settings": {
+            "smart_delay": True,
+            "daily_limit": 500,
+            "use_limit": False
+        }
     }
     if not os.path.exists(MACRO_CONFIG_FILE):
         save_macro_config(defaults)
@@ -140,6 +146,12 @@ def load_macro_config():
         for mode in ["번호등록", "문자발송"]:
             if mode not in cfg or not isinstance(cfg[mode], list):
                 cfg[mode] = defaults[mode]
+        if "settings" not in cfg or not isinstance(cfg["settings"], dict):
+            cfg["settings"] = defaults["settings"]
+        else:
+            for k, v in defaults["settings"].items():
+                if k not in cfg["settings"]:
+                    cfg["settings"][k] = v
         return cfg
     except:
         return defaults
@@ -435,6 +447,116 @@ def write_result_to_excel(row_idx, status_text):
         sheet.range(f'D{excel_row}').value = f"{status_text} ({now})"
     except: pass
 
+def export_results_to_excel():
+    """현재 로드된 전체 목록 및 발송 결과를 정리하여 엑셀 파일로 저장"""
+    if data.empty:
+        messagebox.showwarning("경고", "저장할 데이터가 없습니다.")
+        return
+    
+    # 기본 저장 파일명 제안 (날짜/시간 조합)
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_filename = f"발송결과보고서_{now_str}.xlsx"
+    
+    file_path = filedialog.asksaveasfilename(
+        title="결과 보고서 저장",
+        initialfile=default_filename,
+        filetypes=[("Excel Files", "*.xlsx")],
+        defaultextension=".xlsx"
+    )
+    
+    if not file_path:
+        return
+        
+    try:
+        # 내보낼 데이터 구성
+        export_data = []
+        for idx, row in data.iterrows():
+            status = "대기 중"
+            if idx in registered_indices:
+                status = "발송 성공"
+            elif idx in failed_indices:
+                status = "발송 실패"
+                
+            completed_time = completion_times.get(idx, "-")
+            export_data.append({
+                "연번": idx + 1,
+                "전화번호": row["전화번호"],
+                "발송문자": row["발송문자"],
+                "발송결과": status,
+                "완료시각": completed_time
+            })
+            
+        df_export = pd.DataFrame(export_data)
+        
+        # openpyxl을 사용해 스타일이 적용된 예쁜 엑셀 생성
+        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            df_export.to_excel(writer, index=False, sheet_name="발송 결과")
+            
+            # 스타일링 (헤더 디자인)
+            workbook = writer.book
+            worksheet = writer.sheets["발송 결과"]
+            
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            
+            # 헤더 채우기 색상 (Dark Navy/Slate 계열)
+            header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+            header_font = Font(name="Pretendard", size=11, bold=True, color="FFFFFF")
+            align_center = Alignment(horizontal="center", vertical="center")
+            align_left = Alignment(horizontal="left", vertical="center")
+            
+            # 테두리 스타일
+            thin_border = Border(
+                left=Side(style='thin', color='E2E8F0'),
+                right=Side(style='thin', color='E2E8F0'),
+                top=Side(style='thin', color='E2E8F0'),
+                bottom=Side(style='thin', color='E2E8F0')
+            )
+            
+            # 열 폭 자동 조정 및 스타일 지정
+            for col in worksheet.columns:
+                max_len = 0
+                col_letter = col[0].column_letter
+                for cell in col:
+                    cell.font = Font(name="Pretendard", size=10)
+                    cell.border = thin_border
+                    val_str = str(cell.value or '')
+                    # 한글 인코딩 길이 고려
+                    max_len = max(max_len, len(val_str.encode('utf-8')) if isinstance(val_str, str) else len(str(val_str)))
+                    
+                    # 정렬 설정
+                    if cell.row == 1:
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = align_center
+                    else:
+                        if col_letter in ['A', 'B', 'D', 'E']:
+                            cell.alignment = align_center
+                        else:
+                            cell.alignment = align_left
+                            
+                # 열 너비 설정 (한글 바이트 수 기준으로 너비 계산)
+                worksheet.column_dimensions[col_letter].width = max(int(max_len * 1.1) + 4, 12)
+                
+            # '발송결과' 값에 따라 색상 하이라이트 (성공: 초록, 실패: 빨강)
+            success_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid") # 연초록
+            success_font = Font(name="Pretendard", size=10, color="15803D", bold=True)
+            fail_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid") # 연빨강
+            fail_font = Font(name="Pretendard", size=10, color="B91C1C", bold=True)
+            
+            for row in range(2, len(df_export) + 2):
+                val = worksheet[f"D{row}"].value
+                if val == "발송 성공":
+                    worksheet[f"D{row}"].fill = success_fill
+                    worksheet[f"D{row}"].font = success_font
+                elif val == "발송 실패":
+                    worksheet[f"D{row}"].fill = fail_fill
+                    worksheet[f"D{row}"].font = fail_font
+                    
+        messagebox.showinfo("저장 완료", f"결과 보고서가 저장되었습니다.\n\n경로: {file_path}")
+        open_path(os.path.dirname(file_path))
+    except Exception as e:
+        messagebox.showerror("오류", f"엑셀 파일 저장 중 오류가 발생했습니다.\n\n{e}")
+
 # =========================================================
 #  로그 / 유틸
 # =========================================================
@@ -608,7 +730,7 @@ def verify_password():
 #  데이터 로드
 # =========================================================
 def process_and_set_data(df_raw, silent=False):
-    global data, registered_indices, failed_indices, start_index
+    global data, registered_indices, failed_indices, start_index, completion_times
     try:
         df_raw.columns=[str(c).strip() for c in df_raw.columns]
         if "전화번호" not in df_raw.columns:
@@ -616,11 +738,16 @@ def process_and_set_data(df_raw, silent=False):
         if "발송문자" not in df_raw.columns: df_raw["발송문자"]=""
         dc=df_raw.copy()
         dc['전화번호']=dc['전화번호'].astype(str).str.replace(".0","",regex=False).str.strip()
+        # 🧹 비숫자(공백, 하이픈 등) 제거
+        dc['전화번호']=dc['전화번호'].str.replace(r'[^0-9]', '', regex=True)
+        # 🧹 +82 국가코드 처리
+        dc.loc[dc['전화번호'].str.startswith('8210'), '전화번호'] = '0' + dc['전화번호'].str[2:]
+        # 순수 숫자 데이터만 필터링
         dc=dc[dc['전화번호'].str.match(r'^\d+$',na=False)]
         dc['전화번호']=dc['전화번호'].str.zfill(11)
         dc['발송문자']=dc['발송문자'].astype(str).str.strip()
         data=dc[["전화번호","발송문자"]].reset_index(drop=True)
-        registered_indices.clear(); failed_indices.clear(); start_index=0
+        registered_indices.clear(); failed_indices.clear(); completion_times.clear(); start_index=0
         update_tables(); update_progress()
         if not silent:
             write_usage_log("데이터 로드",f"{len(data)}건")
@@ -659,8 +786,14 @@ def load_from_file_path():
 #  GUI 헬퍼
 # =========================================================
 def get_step_delay():
-    try: return float(delay_var.get())
-    except: return 3.0
+    try:
+        base = float(delay_var.get())
+        if smart_delay_var and smart_delay_var.get():
+            jitter = random.uniform(-0.5, 0.5)
+            return max(0.1, base + jitter)
+        return base
+    except:
+        return 3.0
 def get_batch_size():
     try: return max(1,int(batch_var.get()))
     except: return 100
@@ -812,7 +945,7 @@ def sms_send_one(idx, phone, message):
     return run_macro_for_row("문자발송", phone, message, idx)
 
 def sms_worker():
-    global is_running
+    global is_running, completion_times, is_paused
     is_running=True; set_buttons_running(True)
     mode=send_mode.get(); global_msg=fixed_msg_text.get("1.0",tk.END).strip()
     retry_max=get_retry_count()
@@ -823,12 +956,29 @@ def sms_worker():
         if not is_running: break
         while is_paused: update_status(f"⏸ 일시정지 ({idx+1}번)"); time.sleep(0.3)
         if idx in registered_indices or idx in failed_indices: continue
+
+        # ⚠️ 발송 제한 가드 검사
+        if use_limit_var and use_limit_var.get():
+            try:
+                limit_val = int(limit_var.get())
+            except:
+                limit_val = 500
+            current_sent = len(registered_indices) + len(failed_indices)
+            if current_sent >= limit_val:
+                is_paused = True
+                update_status("⚠️ 발송 제한 도달로 일시정지됨")
+                root.after(0, lambda: messagebox.showwarning("⚠️ 발송 제한 도달", f"설정하신 발송 제한({limit_val}건)에 도달하였습니다.\n추가 발송을 원하시면 제한을 늘리거나 해제한 후 재개해 주세요."))
+                while is_paused: update_status("⚠️ 발송 제한 도달 (일시정지)"); time.sleep(0.3)
+                if not is_running: break
+
         row=data.iloc[idx]; phone=row["전화번호"]
         msg=global_msg if mode=="일괄" else row["발송문자"]
         ok=sms_send_one(idx,phone,msg)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if ok:
             registered_indices.add(idx); write_log("발송성공",phone,msg)
             write_result_to_excel(idx,"발송성공")
+            completion_times[idx] = now_str
         else:
             retry_queue.append((idx,phone,msg))  # 실패 → 재시도 대기열
         root.after(0,update_tables); root.after(0,update_progress)
@@ -842,11 +992,29 @@ def sms_worker():
         still_failed=[]
         for idx,phone,msg in retry_queue:
             if not is_running: break
+            while is_paused: update_status(f"⏸ 일시정지 ({idx+1}번)"); time.sleep(0.3)
+
+            # ⚠️ 발송 제한 가드 검사 (재시도 루프에서도 동일하게 검사)
+            if use_limit_var and use_limit_var.get():
+                try:
+                    limit_val = int(limit_var.get())
+                except:
+                    limit_val = 500
+                current_sent = len(registered_indices) + len(failed_indices)
+                if current_sent >= limit_val:
+                    is_paused = True
+                    update_status("⚠️ 발송 제한 도달로 일시정지됨")
+                    root.after(0, lambda: messagebox.showwarning("⚠️ 발송 제한 도달", f"설정하신 발송 제한({limit_val}건)에 도달하였습니다.\n추가 발송을 원하시면 제한을 늘리거나 해제한 후 재개해 주세요."))
+                    while is_paused: update_status("⚠️ 발송 제한 도달 (일시정지)"); time.sleep(0.3)
+                    if not is_running: break
+
             update_status(f"🔄 재시도 [{idx+1}] {phone} (시도 {attempt})")
             ok=sms_send_one(idx,phone,msg)
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             if ok:
                 registered_indices.add(idx); write_log(f"재시도{attempt}성공",phone,msg)
                 write_result_to_excel(idx,f"재시도{attempt}성공")
+                completion_times[idx] = now_str
             else:
                 still_failed.append((idx,phone,msg))
             root.after(0,update_tables); root.after(0,update_progress)
@@ -856,6 +1024,7 @@ def sms_worker():
     for idx,phone,msg in retry_queue:
         failed_indices.add(idx); write_log("최종실패",phone,msg)
         write_result_to_excel(idx,"발송실패")
+        completion_times[idx] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     root.after(0,update_tables); root.after(0,update_progress)
 
     save_session()
@@ -906,9 +1075,9 @@ def reset_coordinates():
     messagebox.showinfo("초기화 완료", "모든 매크로 좌표가 초기화되었습니다.")
 
 def reset_all():
-    global is_running,start_index
+    global is_running,start_index,completion_times
     is_running=False; start_index=0
-    registered_indices.clear(); failed_indices.clear()
+    registered_indices.clear(); failed_indices.clear(); completion_times.clear()
     clear_session(); update_tables(); update_progress(); update_status("초기화 완료")
 
 def toggle_send_mode():
@@ -1491,8 +1660,17 @@ def create_gui():
     global work_mode,mode_frame,sms_opts_frame,reg_opts_frame
     global tpl_var,tpl_dropdown,excel_writeback_var
     global manual_phone_entry, manual_msg_entry, quick_phone_entry, quick_msg_entry
+    global smart_delay_var, use_limit_var, limit_var
 
     root=tk.Tk(); root.title("📱 CIS 통합 매크로 — 번호등록 + 문자발송")
+    
+    cfg_macro = load_macro_config()
+    cfg_settings = cfg_macro.get("settings", {"smart_delay": True, "daily_limit": 500, "use_limit": False})
+    
+    smart_delay_var = tk.BooleanVar(value=cfg_settings.get("smart_delay", True))
+    use_limit_var = tk.BooleanVar(value=cfg_settings.get("use_limit", False))
+    limit_var = tk.StringVar(value=str(cfg_settings.get("daily_limit", 500)))
+
     root.geometry("1200x920" if IS_MAC else "1200x950")
     root.configure(bg=BG_MAIN)
 
@@ -1623,6 +1801,41 @@ def create_gui():
     tk.Spinbox(st,from_=0,to=5,increment=1,textvariable=retry_var,width=4,font=FONT_BOLD_10,justify="center",bd=1,relief="solid").pack(side=tk.LEFT)
     tk.Label(st,text="회",font=FONT_REG_10,bg=BG_CARD,fg=COLOR_MUTED).pack(side=tk.LEFT,padx=2)
 
+    def save_macro_config_settings():
+        try:
+            cfg = load_macro_config()
+            cfg["settings"] = {
+                "smart_delay": smart_delay_var.get(),
+                "daily_limit": int(limit_var.get()) if limit_var.get().strip().isdigit() else 500,
+                "use_limit": use_limit_var.get()
+            }
+            save_macro_config(cfg)
+        except:
+            pass
+
+    # 2-B-2 차단방지 및 수량제한 라인 추가
+    st2=tk.Frame(sms_opts_frame,bg=BG_CARD)
+    st2.pack(fill=tk.X,pady=(2,4))
+    
+    tk.Checkbutton(st2,text="🔒 차단방지 랜덤 딜레이",variable=smart_delay_var,command=save_macro_config_settings,font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,15))
+    tk.Checkbutton(st2,text="⚠️ 발송 수량 제한:",variable=use_limit_var,command=lambda: toggle_limit_widgets(),font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,5))
+    
+    spin_limit = tk.Spinbox(st2,from_=10,to=10000,increment=10,textvariable=limit_var,width=5,font=FONT_BOLD_10,justify="center",bd=1,relief="solid",command=save_macro_config_settings)
+    spin_limit.pack(side=tk.LEFT)
+    spin_limit.bind("<FocusOut>", lambda e: save_macro_config_settings())
+    spin_limit.bind("<KeyRelease>", lambda e: save_macro_config_settings())
+    
+    tk.Label(st2,text="건 도달 시 자동 일시정지",font=FONT_REG_10,bg=BG_CARD,fg=COLOR_MUTED).pack(side=tk.LEFT,padx=(5,0))
+    
+    def toggle_limit_widgets():
+        if use_limit_var.get():
+            spin_limit.config(state=tk.NORMAL)
+        else:
+            spin_limit.config(state=tk.DISABLED)
+        save_macro_config_settings()
+        
+    toggle_limit_widgets()
+
     # 문구 템플릿 영역
     tpl_frame=tk.Frame(sms_opts_frame,bg=BG_CARD)
     tpl_frame.pack(fill=tk.X,pady=(4,2))
@@ -1726,6 +1939,7 @@ def create_gui():
     
     create_btn(lgf, "📄 발송로그.txt 열기", open_log_file, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
     create_btn(lgf, "📁 저장 폴더 열기", open_log_folder, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
+    create_btn(lgf, "📊 결과 엑셀 보고서 저장", export_results_to_excel, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
 
     status_var=tk.StringVar(value="대기 중")
     tk.Label(root,textvariable=status_var,font=FONT_BOLD_9,bg="#cbd5e1",fg=COLOR_NAVY,anchor="w",padx=15,pady=5).pack(fill=tk.X,side=tk.BOTTOM)
