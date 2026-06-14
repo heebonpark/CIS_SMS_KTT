@@ -355,42 +355,67 @@ def open_log_folder(): open_path(APP_DIR)
 def safe_input(text):
     pyperclip.copy(text); pyautogui.hotkey(MODIFIER,"v"); time.sleep(PASTE_DELAY)
 
-# ── 현대식 버튼 헬퍼 (마우스 호버 지원 & OS 호환성) ──
+# ── 현대식 버튼 헬퍼 (마우스 호버 지원 & OS 호환성 완벽 해결) ──
+class LabelButton(tk.Label):
+    def __init__(self, parent, text, command, bg, fg="white", hover_bg=None, font=None, width=None, state=tk.NORMAL, **kwargs):
+        self.command = command
+        self.bg = bg
+        self.hover_bg = hover_bg or bg
+        self.fg = fg
+        super().__init__(
+            parent,
+            text=text,
+            bg=bg,
+            fg=fg,
+            font=font,
+            bd=0,
+            relief="flat",
+            highlightbackground=COLOR_BORDER,
+            highlightthickness=1,
+            cursor="hand2" if state == tk.NORMAL else "arrow",
+            state=state,
+            padx=12,
+            pady=6,
+            **kwargs
+        )
+        if width:
+            self.config(width=width)
+            
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+    def _on_click(self, event):
+        if self.cget("state") == tk.NORMAL and self.command:
+            self.command()
+
+    def _on_enter(self, event):
+        if self.cget("state") == tk.NORMAL:
+            self.config(bg=self.hover_bg)
+
+    def _on_leave(self, event):
+        if self.cget("state") == tk.NORMAL:
+            self.config(bg=self.bg)
+
+    def disable(self):
+        self.config(state=tk.DISABLED, bg="#cbd5e1", fg="#94a3b8", cursor="arrow")
+
+    def enable(self):
+        self.config(state=tk.NORMAL, bg=self.bg, fg=self.fg, cursor="hand2")
+
 def create_btn(parent, text, command, bg_color, hover_color, fg_color="white", font=None, width=None, state=tk.NORMAL):
     if font is None:
         font = FONT_BOLD_10
-    btn = tk.Button(
-        parent,
-        text=text,
-        command=command,
-        bg=bg_color,
-        fg=fg_color,
-        activebackground=hover_color,
-        activeforeground=fg_color,
-        highlightbackground=COLOR_BORDER,
-        highlightthickness=1,
-        bd=1,
-        relief="solid",
-        font=font,
-        state=state,
-        padx=12,
-        pady=6
-    )
-    if width:
-        btn.config(width=width)
-    
-    # Hover effect
-    btn.bind("<Enter>", lambda e: btn.config(bg=hover_color) if btn.cget("state") == tk.NORMAL else None)
-    btn.bind("<Leave>", lambda e: btn.config(bg=bg_color) if btn.cget("state") == tk.NORMAL else None)
-    return btn
+    return LabelButton(parent, text, command, bg_color, fg_color, hover_color, font, width, state)
 
 def set_btn_state(btn, state, normal_bg, hover_bg, fg="white"):
     if state == tk.DISABLED:
-        btn.config(state=tk.DISABLED, bg="#cbd5e1", fg="#94a3b8", highlightbackground="#cbd5e1")
+        btn.disable()
     else:
-        btn.config(state=tk.NORMAL, bg=normal_bg, fg=fg, highlightbackground=COLOR_BORDER)
-        btn.bind("<Enter>", lambda e: btn.config(bg=hover_bg))
-        btn.bind("<Leave>", lambda e: btn.config(bg=normal_bg))
+        btn.bg = normal_bg
+        btn.hover_bg = hover_bg
+        btn.fg = fg
+        btn.enable()
 
 # =========================================================
 #  좌표 캡처 팝업
