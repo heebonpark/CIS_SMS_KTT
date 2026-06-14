@@ -766,7 +766,7 @@ def create_gui():
     global tpl_var,tpl_dropdown,excel_writeback_var
 
     root=tk.Tk(); root.title("📱 CIS 통합 매크로 — 번호등록 + 문자발송")
-    root.geometry("1200Client950" if IS_MAC else "1200x950"); root.geometry("1200x920")
+    root.geometry("1200x920" if IS_MAC else "1200x950")
     root.configure(bg=BG_MAIN)
 
     # ttk 스타일 재지정 (clam 테마 활성화 및 각 컴포넌트 세팅)
