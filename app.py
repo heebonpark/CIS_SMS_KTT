@@ -148,20 +148,23 @@ def get_user_info():
     except: user=os.environ.get("USERNAME",os.environ.get("USER","UNKNOWN"))
     return pc,user
 
-def send_discord_message(webhook_url, content):
+def send_discord_message(webhook_url, payload_or_content):
     if not webhook_url:
         return
     def worker():
         try:
             import urllib.request
             import json
-            data = {"content": content}
+            if isinstance(payload_or_content, dict):
+                data = payload_or_content
+            else:
+                data = {"content": payload_or_content}
             req = urllib.request.Request(
                 webhook_url,
                 data=json.dumps(data).encode("utf-8"),
                 headers={"Content-Type": "application/json", "User-Agent": "urllib-discord-bot"}
             )
-            with urllib.request.urlopen(req) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 pass
         except Exception:
             pass
@@ -178,10 +181,54 @@ def write_usage_log(action,detail=""):
         cfg = load_admin_config()
         webhook_url = cfg.get("discord_webhook", "").strip()
         if webhook_url:
-            discord_msg = f"📢 **[사용자 모니터링]**\n• **시간**: `{now}`\n• **PC/사용자**: `{pc} / {user}`\n• **작업**: `{action}`"
-            if detail:
-                discord_msg += f"\n• **상세**: `{detail}`"
-            send_discord_message(webhook_url, discord_msg)
+            def discord_worker():
+                try:
+                    import urllib.request
+                    import json
+                    import platform
+                    
+                    # 1. OS Info
+                    os_info = f"{platform.system()} {platform.release()}"
+                    
+                    # 2. Public IP & Location Info (ip-api.com)
+                    ip_addr = "Unknown"
+                    location_str = "Unknown"
+                    try:
+                        req_ip = urllib.request.Request(
+                            "http://ip-api.com/json/",
+                            headers={"User-Agent": "Mozilla/5.0"}
+                        )
+                        with urllib.request.urlopen(req_ip, timeout=5) as resp:
+                            data = json.loads(resp.read().decode("utf-8"))
+                            ip_addr = data.get("query", "Unknown")
+                            city = data.get("city", "")
+                            country = data.get("country", "")
+                            org = data.get("org", "Unknown")
+                            location_str = f"{city}, {country} ({org})"
+                    except Exception:
+                        pass
+                    
+                    # 3. Build Embed Payload
+                    payload = {
+                        "embeds": [{
+                            "title": "🚀 CIS Execution Detected",
+                            "color": 0x3498db,  # Blue
+                            "fields": [
+                                {"name": "작업 (Action)", "value": action, "inline": True},
+                                {"name": "상세 (Detail)", "value": detail if detail else "N/A", "inline": True},
+                                {"name": "PC / 사용자", "value": f"{pc} / {user}", "inline": False},
+                                {"name": "OS", "value": os_info, "inline": True},
+                                {"name": "공인 IP (Public IP)", "value": ip_addr, "inline": True},
+                                {"name": "위치 (Location)", "value": location_str, "inline": False},
+                            ],
+                            "footer": {"text": "Real-time Monitoring System"},
+                            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                        }]
+                    }
+                    send_discord_message(webhook_url, payload)
+                except Exception:
+                    pass
+            threading.Thread(target=discord_worker, daemon=True).start()
     except: pass
 
 def check_expiration(cfg):
