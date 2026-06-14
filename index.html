@@ -11,11 +11,12 @@
     
     <style>
         :root {
+            --navy-dark: #0b0f19;
             --navy: #0f172a;
             --blue: #2563eb;
             --blue-hover: #1d4ed8;
             --slate-bg: #f8fafc;
-            --slate-border: #cbd5e1;
+            --slate-border: #e2e8f0;
             --text-dark: #0f172a;
             --text-muted: #64748b;
             --card-bg: #ffffff;
@@ -26,7 +27,7 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+            font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
         }
 
         body {
@@ -35,25 +36,54 @@
             line-height: 1.6;
         }
 
-        /* Header / Hero Section */
-        .hero {
-            background: linear-gradient(135deg, var(--navy) 0%, #1e293b 100%);
-            color: white;
-            padding: 80px 20px;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
+        /* Navbar */
+        .navbar {
+            background-color: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
-        .hero::after {
-            content: '';
-            position: absolute;
-            bottom: -50px;
-            left: 0;
-            width: 100%;
-            height: 100px;
-            background: var(--slate-bg);
-            transform: skewY(-2deg);
+        .nav-logo {
+            font-size: 1.2rem;
+            font-weight: 850;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+
+        .nav-link {
+            color: #cbd5e1;
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover {
+            color: white;
+        }
+
+        /* Hero Section */
+        .hero {
+            background: radial-gradient(circle at top, #1e293b 0%, var(--navy-dark) 100%);
+            color: white;
+            padding: 90px 20px 140px 20px;
+            text-align: center;
+            position: relative;
         }
 
         .hero-container {
@@ -64,31 +94,38 @@
         }
 
         .badge {
-            background-color: rgba(37, 99, 235, 0.2);
+            background-color: rgba(37, 99, 235, 0.15);
             color: #60a5fa;
             border: 1px solid rgba(37, 99, 235, 0.3);
-            padding: 6px 14px;
+            padding: 6px 16px;
             border-radius: 50px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             font-weight: 700;
             display: inline-block;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
             letter-spacing: 0.5px;
+            text-transform: uppercase;
         }
 
         .hero h1 {
-            font-size: 2.8rem;
-            font-weight: 800;
-            margin-bottom: 15px;
-            letter-spacing: -0.5px;
-            line-height: 1.2;
+            font-size: 3.2rem;
+            font-weight: 900;
+            margin-bottom: 20px;
+            letter-spacing: -1px;
+            line-height: 1.25;
+            background: linear-gradient(to right, #ffffff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
         .hero p {
-            font-size: 1.25rem;
+            font-size: 1.3rem;
             color: #94a3b8;
-            margin-bottom: 40px;
+            margin-bottom: 45px;
             font-weight: 400;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         /* Buttons */
@@ -104,12 +141,12 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 14px 28px;
-            font-size: 1rem;
+            padding: 15px 32px;
+            font-size: 1.05rem;
             font-weight: 700;
-            border-radius: 12px;
+            border-radius: 14px;
             text-decoration: none;
-            transition: all 0.2s ease-in-out;
+            transition: all 0.25s ease-in-out;
             cursor: pointer;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
@@ -122,93 +159,169 @@
 
         .btn-primary:hover {
             background-color: var(--blue-hover);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
+            transform: translateY(-3px);
+            box-shadow: 0 12px 20px -3px rgba(37, 99, 235, 0.4);
         }
 
         .btn-secondary {
-            background-color: transparent;
-            color: #cbd5e1;
-            border: 1px solid rgba(203, 213, 225, 0.3);
+            background-color: rgba(255, 255, 255, 0.03);
+            color: #e2e8f0;
+            border: 1px solid rgba(203, 213, 225, 0.2);
         }
 
         .btn-secondary:hover {
-            background-color: rgba(255, 255, 255, 0.05);
+            background-color: rgba(255, 255, 255, 0.08);
             color: white;
-            border-color: white;
-            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-3px);
+        }
+
+        /* Preview Image Frame */
+        .preview-section {
+            margin-top: -90px;
+            position: relative;
+            z-index: 20;
+            text-align: center;
+            padding: 0 20px;
+        }
+
+        .preview-frame {
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: #1e293b;
+            border-radius: 16px;
+            padding: 10px;
+            box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+
+        .preview-frame:hover {
+            transform: scale(1.01);
+        }
+
+        .frame-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px 10px 10px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .dot-red { background-color: #ef4444; }
+        .dot-yellow { background-color: #f59e0b; }
+        .dot-green { background-color: #10b981; }
+
+        .preview-img {
+            width: 100%;
+            border-radius: 8px;
+            display: block;
+            border: 1px solid rgba(0, 0, 0, 0.2);
         }
 
         /* Main Container */
         .container {
             max-width: 1000px;
             margin: 0 auto;
-            padding: 40px 20px;
+            padding: 80px 20px 40px 20px;
         }
 
-        /* Features Grid */
+        /* Grid */
+        .section-title {
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 850;
+            color: var(--navy);
+            margin-bottom: 50px;
+            letter-spacing: -0.5px;
+        }
+
         .features {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 25px;
-            margin-top: 40px;
-            margin-bottom: 60px;
+            gap: 30px;
+            margin-bottom: 80px;
         }
 
         .feature-card {
             background-color: var(--card-bg);
             border: 1px solid var(--slate-border);
-            border-radius: 16px;
-            padding: 30px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            transition: all 0.2s ease;
+            border-radius: 20px;
+            padding: 35px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+            transition: all 0.25s ease;
         }
 
         .feature-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+            transform: translateY(-6px);
+            box-shadow: 0 15px 30px rgba(15, 23, 42, 0.06);
             border-color: var(--blue);
         }
 
         .feature-icon {
-            font-size: 2rem;
-            margin-bottom: 15px;
+            font-size: 2.2rem;
+            margin-bottom: 20px;
+            background-color: rgba(37, 99, 235, 0.06);
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
         }
 
         .feature-card h3 {
-            font-size: 1.2rem;
-            font-weight: 750;
-            margin-bottom: 10px;
+            font-size: 1.25rem;
+            font-weight: 800;
+            margin-bottom: 12px;
             color: var(--navy);
         }
 
         .feature-card p {
             color: var(--text-muted);
-            font-size: 0.95rem;
+            font-size: 0.98rem;
+            line-height: 1.6;
         }
 
         /* Guide Section */
         .guide-section {
             background-color: var(--card-bg);
             border: 1px solid var(--slate-border);
-            border-radius: 20px;
-            padding: 40px;
-            margin-bottom: 60px;
+            border-radius: 24px;
+            padding: 50px;
+            margin-bottom: 80px;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
         }
 
         .guide-section h2 {
-            font-size: 1.8rem;
-            font-weight: 800;
-            margin-bottom: 25px;
+            font-size: 2rem;
+            font-weight: 850;
+            margin-bottom: 35px;
             color: var(--navy);
             border-left: 5px solid var(--blue);
-            padding-left: 15px;
+            padding-left: 20px;
         }
 
         .step {
             display: flex;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
+            position: relative;
+        }
+
+        .step:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 45px;
+            left: 20px;
+            width: 2px;
+            height: calc(100% - 15px);
+            background-color: var(--slate-border);
         }
 
         .step:last-child {
@@ -216,31 +329,36 @@
         }
 
         .step-num {
-            background-color: rgba(37, 99, 235, 0.1);
+            background-color: rgba(37, 99, 235, 0.08);
             color: var(--blue);
-            font-weight: 800;
-            width: 36px;
-            height: 36px;
+            font-weight: 850;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-right: 20px;
+            margin-right: 25px;
             flex-shrink: 0;
-            font-size: 1.1rem;
+            font-size: 1.15rem;
+            border: 1px solid rgba(37, 99, 235, 0.15);
+        }
+
+        .step-content {
+            flex-grow: 1;
         }
 
         .step-content h3 {
-            font-size: 1.15rem;
-            font-weight: 750;
-            margin-bottom: 8px;
+            font-size: 1.25rem;
+            font-weight: 800;
+            margin-bottom: 10px;
             color: var(--navy);
         }
 
         .step-content p {
             color: var(--text-muted);
-            font-size: 0.95rem;
-            margin-bottom: 12px;
+            font-size: 1rem;
+            margin-bottom: 15px;
         }
 
         code {
@@ -249,28 +367,30 @@
             padding: 4px 8px;
             border-radius: 6px;
             font-family: Consolas, Monaco, monospace;
-            font-size: 0.9rem;
+            font-size: 0.92rem;
             border: 1px solid #e2e8f0;
+            font-weight: 700;
         }
 
         pre {
-            background-color: var(--navy);
+            background-color: var(--navy-dark);
             color: #38bdf8;
-            padding: 16px;
-            border-radius: 10px;
+            padding: 20px;
+            border-radius: 12px;
             font-family: Consolas, Monaco, monospace;
-            font-size: 0.9rem;
+            font-size: 0.92rem;
             overflow-x: auto;
-            margin: 10px 0;
+            margin: 15px 0;
             border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
         }
 
         /* Footer */
         footer {
             text-align: center;
-            padding: 40px 20px;
+            padding: 60px 20px;
             color: var(--text-muted);
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             border-top: 1px solid var(--slate-border);
             background-color: var(--card-bg);
         }
@@ -296,19 +416,36 @@
                 width: 100%;
             }
             .guide-section {
-                padding: 25px 20px;
+                padding: 30px 20px;
+            }
+            .step {
+                flex-direction: column;
+            }
+            .step-num {
+                margin-bottom: 15px;
+            }
+            .step:not(:last-child)::after {
+                display: none;
             }
         }
     </style>
 </head>
 <body>
 
+    <!-- Navbar -->
+    <nav class="navbar">
+        <a href="#" class="nav-logo">📱 CIS 문자 발송 솔루션</a>
+        <div class="nav-links">
+            <a href="https://github.com/heebonpark/CIS_SMS_KTT" class="nav-link">GitHub Repository</a>
+        </div>
+    </nav>
+
     <!-- Hero Section -->
     <header class="hero">
         <div class="hero-container">
-            <span class="badge">Windows & macOS 완벽 지원</span>
+            <span class="badge">Windows & macOS 완벽 통합 지원</span>
             <h1>CIS 통합 문자 발송 매크로</h1>
-            <p>번호등록부터 문자 발송까지, 수작업 없는 프리미엄 자동화 매크로 프로그램</p>
+            <p>마우스 좌표 매크로와 실시간 엑셀 결과 연동 기능을 탑재하여 대량/개별 문자 발송을 완벽히 자동화하는 데스크톱 전용 프로그램입니다.</p>
             <div class="btn-group">
                 <a href="https://github.com/heebonpark/CIS_SMS_KTT/archive/refs/heads/main.zip" class="btn btn-primary">⚡ 프로그램 다운로드 (ZIP)</a>
                 <a href="https://github.com/heebonpark/CIS_SMS_KTT" class="btn btn-secondary">💾 GitHub 소스코드 보기</a>
@@ -316,50 +453,66 @@
         </div>
     </header>
 
+    <!-- Preview Frame -->
+    <section class="preview-section">
+        <div class="preview-frame">
+            <div class="frame-header">
+                <span class="dot dot-red"></span>
+                <span class="dot dot-yellow"></span>
+                <span class="dot dot-green"></span>
+                <span style="color: #64748b; font-size: 0.8rem; font-weight: 600; margin-left: auto; margin-right: auto; padding-right: 30px;">CIS SMS Macro GUI</span>
+            </div>
+            <!-- Mockup Image from Repository assets -->
+            <img src="assets/app_preview.png" alt="CIS App UI Preview Mockup" class="preview-img" />
+        </div>
+    </section>
+
     <!-- Main Content -->
     <main class="container">
+
+        <h2 class="section-title">주요 핵심 기능 (Core Features)</h2>
 
         <!-- Features -->
         <section class="features">
             <div class="feature-card">
-                <div class="feature-icon">💻</div>
-                <h3>크로스 플랫폼 지원</h3>
-                <p>맥북의 Command 단축키와 윈도우의 Ctrl 단축키를 자동 분기 처리하여 양대 OS 환경 어디서나 완벽하게 구동됩니다.</p>
+                <div class="feature-icon" style="background-color: rgba(16, 185, 129, 0.08); color: var(--emerald);">💻</div>
+                <h3>크로스 플랫폼 최적화</h3>
+                <p>맥북의 <code>Command</code> 키와 윈도우의 <code>Ctrl</code> 단축키 동작을 운영체제별로 실시간 감지 및 분기 처리하여 완벽히 구동됩니다.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">🎨</div>
-                <h3>프리미엄 커스텀 UI</h3>
-                <p>맥북 Aqua 테마 오류를 개선한 <code>LabelButton</code> 설계로 고대비 가시성이 뛰어난 프리미엄 Slate/Navy 디자인을 제공합니다.</p>
+                <div class="feature-icon" style="background-color: rgba(37, 99, 235, 0.08); color: var(--blue);">🎨</div>
+                <h3>맥북 화면 렌더링 버그 해결</h3>
+                <p>맥 OS 특유의 버튼 배경색 무시 오류를 극복하기 위해 커스텀 <code>LabelButton</code>으로 설계되어 가시성과 가독성이 뛰어납니다.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">⚡</div>
+                <div class="feature-icon" style="background-color: rgba(139, 92, 246, 0.08); color: #8b5cf6;">⚡</div>
                 <h3>단건 즉시 발송</h3>
-                <p>대기 리스트 빌드 필요 없이 화면 내에서 개별 연락처와 문구를 즉시 마우스 좌표 연동 매크로로 송출할 수 있습니다.</p>
+                <p>대기 목록 파일 없이도 화면 내부에서 직접 연락처와 발송용 개별 문구를 기입하고 원클릭으로 매크로를 즉시 가동할 수 있습니다.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">📊</div>
-                <h3>엑셀 실시간 기록</h3>
-                <p>발송이 처리될 때마다 백그라운드에서 동작하여 연동된 active 엑셀 시트 D열에 성공/실패 여부를 실시간으로 기재합니다.</p>
+                <div class="feature-icon" style="background-color: rgba(6, 182, 212, 0.08); color: #06b6d4;">📊</div>
+                <h3>실시간 엑셀 백그라운드 기록</h3>
+                <p>발송 처리가 한 건씩 진행될 때마다, 연동된 엑셀 파일의 D열에 성공 여부 및 시간 정보가 자동으로 즉시 마킹됩니다.</p>
             </div>
         </section>
 
         <!-- Installation Guide -->
         <section class="guide-section">
-            <h2>설치 및 실행 가이드 (Quick Start)</h2>
+            <h2>설치 및 실행 방법 (Quick Start Guide)</h2>
             
             <div class="step">
                 <div class="step-num">1</div>
                 <div class="step-content">
-                    <h3>프로그램 다운로드 및 압축 해제</h3>
-                    <p>우측 상단의 다운로드 버튼을 눌러 ZIP 파일을 다운로드하고, 원하는 폴더에 압축을 풉니다.</p>
+                    <h3>프로그램 파일 다운로드</h3>
+                    <p>페이지 상단의 파란색 <strong>[⚡ 프로그램 다운로드 (ZIP)]</strong> 버튼을 클릭하여 소스 코드 압축 파일을 내려받고 편리한 경로에 해제합니다.</p>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">2</div>
                 <div class="step-content">
-                    <h3>필수 패키지 설치</h3>
-                    <p>명령 프롬프트(Windows) 또는 터미널(macOS)을 열어 압축 해제한 폴더로 이동한 뒤, 아래 패키지 설치 명령어를 입력합니다.</p>
+                    <h3>필수 모듈 패키지 원클릭 설치</h3>
+                    <p>터미널(macOS) 또는 명령 프롬프트(Windows) 창을 실행하고, 압축 해제한 경로(예: <code>cd Downloads/CIS_SMS_KTT</code>)로 이동하여 라이브러리를 설치합니다.</p>
                     <pre>pip install pandas pyautogui pyperclip xlwings openpyxl</pre>
                 </div>
             </div>
@@ -367,13 +520,13 @@
             <div class="step">
                 <div class="step-num">3</div>
                 <div class="step-content">
-                    <h3>프로그램 실행</h3>
-                    <p>터미널에 아래 구동 명령을 작성하여 매크로 프로그램을 시작합니다.</p>
+                    <h3>매크로 시작</h3>
+                    <p>아래 명령어를 사용하여 매크로 전용 GUI를 즉시 실행합니다.</p>
                     <p><strong>macOS 사용자:</strong></p>
                     <pre>python3 app.py</pre>
                     <p><strong>Windows 사용자:</strong></p>
                     <pre>python app.py</pre>
-                    <p>초기 보안 실행 비밀번호는 <code>0303</code>입니다.</p>
+                    <p>실행 비밀번호의 기본값은 <code>0303</code>입니다.</p>
                 </div>
             </div>
         </section>
@@ -383,7 +536,7 @@
     <!-- Footer -->
     <footer>
         <p>Copyright &copy; 2026 세은아빠 (<a href="mailto:bough38@naver.com">bough38@naver.com</a>). All rights reserved.</p>
-        <p style="margin-top: 5px; font-size: 0.8rem; color: #94a3b8;">본 프로그램의 소스코드는 무단 배포 및 상업적 변형이 금지됩니다.</p>
+        <p style="margin-top: 8px; font-size: 0.82rem; color: #94a3b8;">본 프로그램의 저작권은 '세은아빠'에게 있으며, 무단 복제 및 변형 사용을 금지합니다.</p>
     </footer>
 
 </body>
