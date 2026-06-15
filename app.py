@@ -115,6 +115,9 @@ data = pd.DataFrame(columns=["전화번호", "발송문자"])
 start_index = 0
 loaded_file_path = ""   # 엑셀 결과 기록용
 _multi_preview = {}      # ✅ 다중 모드 테이블 미리보기 {idx: {"display_phone": "...", "preview": "..."}}
+_preview_popup = None    # ✅ 다중/전체 화면 미리보기 팝업 (Toplevel)
+_popup_text_widget = None
+_popup_label_widget = None
 PASTE_DELAY = 0.3
 REG_DELAY_INPUT = 0.05
 REG_DELAY_TAB = 0.1
@@ -1375,20 +1378,62 @@ def update_status(t): root.after(0,lambda:status_var.set(t))
 def update_preview(idx, total, phone, message, label="발송 예정"):
     """발송 미리보기 패널 업데이트 (쓰레드 안전)"""
     def _update():
+        global _preview_popup, _popup_text_widget, _popup_label_widget
         try:
             # 상단 정보
             담당자 = _multi_preview[idx]["display_phone"] if idx in _multi_preview else phone
-            preview_info_label.config(
-                text=f"📤 [{idx+1}/{total}] {담당자}  —  {label}",
-                fg="#dc2626" if "긴급" in label else "#1e293b"
-            )
-            # 메시지 본문
+            header_text = f"📤 [{idx+1}/{total}] {담당자}  —  {label}"
+            fg_color = "#dc2626" if "긴급" in label else "#1e293b"
+            
+            preview_info_label.config(text=header_text, fg=fg_color)
+            
+            # 메시지 본문 (인라인)
             preview_text_widget.config(state=tk.NORMAL)
             preview_text_widget.delete("1.0", tk.END)
             preview_text_widget.insert(tk.END, message)
             preview_text_widget.config(state=tk.DISABLED)
-            # 스크롤 맨 위로
             preview_text_widget.see("1.0")
+
+            # ✅ 플로팅 팝업 띄우기 (문자발송 실행 중 전체화면 미리보기)
+            if _preview_popup is None or not _preview_popup.winfo_exists():
+                _preview_popup = tk.Toplevel(root)
+                _preview_popup.title("발송 중 — 전체 내용 미리보기")
+                _preview_popup.geometry("450x600")
+                _preview_popup.attributes("-topmost", True)
+                _preview_popup.configure(bg="#f8fafc")
+                
+                # 위치를 화면 우측으로 (메인 앱을 가리지 않게)
+                x = root.winfo_x() + root.winfo_width() + 10
+                y = root.winfo_y()
+                _preview_popup.geometry(f"+{x}+{y}")
+                
+                # 창 닫기 버튼 이벤트 방지 (의도치 않은 닫기 방지)
+                _preview_popup.protocol("WM_DELETE_WINDOW", lambda: None)
+                
+                _popup_label_widget = tk.Label(_preview_popup, text="", font=("Pretendard", 12, "bold"), bg="#f8fafc", fg="#1e293b", pady=10)
+                _popup_label_widget.pack(fill=tk.X)
+                
+                f = tk.Frame(_preview_popup, bg="#ffffff", bd=1, relief=tk.SOLID)
+                f.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+                
+                scroll = tk.Scrollbar(f)
+                scroll.pack(side=tk.RIGHT, fill=tk.Y)
+                
+                _popup_text_widget = tk.Text(f, font=("Pretendard", 11), bg="#ffffff", yscrollcommand=scroll.set, wrap=tk.WORD, padx=10, pady=10)
+                _popup_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+                scroll.config(command=_popup_text_widget.yview)
+
+            # 팝업 데이터 갱신
+            if _popup_label_widget and _popup_label_widget.winfo_exists():
+                _popup_label_widget.config(text=header_text, fg=fg_color)
+            
+            if _popup_text_widget and _popup_text_widget.winfo_exists():
+                _popup_text_widget.config(state=tk.NORMAL)
+                _popup_text_widget.delete("1.0", tk.END)
+                _popup_text_widget.insert(tk.END, message)
+                _popup_text_widget.config(state=tk.DISABLED)
+                _popup_text_widget.see("1.0")
+
         except:
             pass
     root.after(0, _update)
@@ -1408,12 +1453,18 @@ def update_preview_countdown(sec):
 def clear_preview():
     """미리보기 초기화"""
     def _update():
+        global _preview_popup
         try:
             preview_info_label.config(text="대기 중", fg="#1e293b")
             preview_countdown_label.config(text="")
             preview_text_widget.config(state=tk.NORMAL)
             preview_text_widget.delete("1.0", tk.END)
             preview_text_widget.config(state=tk.DISABLED)
+            
+            # ✅ 발송 완료 시 팝업창 자동 닫기
+            if _preview_popup and _preview_popup.winfo_exists():
+                _preview_popup.destroy()
+            _preview_popup = None
         except:
             pass
     root.after(0, _update)
