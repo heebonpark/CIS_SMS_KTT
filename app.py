@@ -561,15 +561,16 @@ def write_result_to_excel(row_idx, status_text):
                     if not isinstance(b_vals, list):
                         b_vals = [[b_vals]]
                     phone_digits = ''.join(filter(str.isdigit, phone))
-                    for r, cell in enumerate(b_vals):
-                        cell_val = cell[0] if isinstance(cell, list) else cell
-                        if cell_val is None:
-                            continue
-                        cell_digits = ''.join(filter(str.isdigit, str(cell_val)))
-                        # 마지막 9자리로 비교 (앞 0 여부 무관)
-                        if cell_digits[-9:] == phone_digits[-9:]:
-                            target_row = r + 1  # 1-indexed
-                            break
+                    if len(phone_digits) >= 9:
+                        for r, cell in enumerate(b_vals):
+                            cell_val = cell[0] if isinstance(cell, list) else cell
+                            if cell_val is None:
+                                continue
+                            cell_digits = ''.join(filter(str.isdigit, str(cell_val)))
+                            # 마지막 9자리로 비교 (앞 0 여부 무관)
+                            if len(cell_digits) >= 9 and cell_digits[-9:] == phone_digits[-9:]:
+                                target_row = r + 1  # 1-indexed
+                                break
 
             if target_row:
                 sheet.range(f'G{target_row}').value = result_val
@@ -1196,19 +1197,9 @@ def load_multi_customer_from_excel():
         df[c_name] = df[c_name].ffill()
         df[c_phone] = df[c_phone].ffill()
 
-        # ✅ 원본 엑셀 행 번호 보존 (ffill 전에 담당자가 실제로 있었던 행 = 해당 그룹의 첫 행)
+        # ✅ 원본 엑셀 행 번호 보존 (행 필터링 및 정렬 전 최초 행 위치 기록)
         #    엑셀에서 raw[1:]부터 읽었으므로 엑셀 행번호 = DataFrame index + 2 (1-based + header)
         df['_orig_row'] = range(2, len(df) + 2)  # 헤더=1행, 데이터=2행부터
-
-        # ✅ 담당자가 실제로 있었던 행을 그룹 대표 행으로 기록
-        #    (ffill 이후에도 원본 담당자 행 위치를 알기 위해 사전 추출)
-        name_rows = df[df[c_name].notna()][['_orig_row', c_name, c_phone]].copy()
-        # 그룹의 첫 번째 원본 행: (담당자, 연락처) → 엑셀 행번호
-        group_excel_row = {}
-        for _, nr in name_rows.iterrows():
-            key = (str(nr[c_name]).strip(), str(nr[c_phone]).strip())
-            if key not in group_excel_row:
-                group_excel_row[key] = int(nr['_orig_row'])
 
         # 완전 빈 행 제거 (계약번호+상호 둘 다 없는 행)
         def row_has_data(row):
@@ -1283,8 +1274,8 @@ def load_multi_customer_from_excel():
             if len(preview_companies) > 2:
                 preview_text += f" 외 {len(preview_companies)-2}건"
 
-            # ✅ 원본 엑셀 행번호 조회 (G열 쓰기용)
-            excel_row_num = group_excel_row.get((담당자, 연락처), None)
+            # ✅ 원본 엑셀 행번호 조회 (G열 쓰기용 - 그룹의 첫 번째 계약 행)
+            excel_row_num = int(group_rows[0]['_orig_row'])
 
             result_rows.append({
                 "전화번호": 연락처,
