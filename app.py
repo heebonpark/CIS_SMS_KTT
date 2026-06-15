@@ -2520,7 +2520,14 @@ def create_gui():
     use_limit_var = tk.BooleanVar(value=cfg_settings.get("use_limit", False))
     limit_var = tk.StringVar(value=str(cfg_settings.get("daily_limit", 500)))
 
-    root.geometry("1200x800" if IS_MAC else "1200x840")
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    w = min(1200, sw - 40)
+    h = min(900, sh - 80)
+    x = (sw - w) // 2
+    y = max(0, (sh - h) // 2 - 25)
+    root.geometry(f"{w}x{h}+{x}+{y}")
+    root.minsize(900, 650)
     root.configure(bg=BG_MAIN)
 
     if IS_MAC:
@@ -2646,15 +2653,25 @@ def create_gui():
     tk.Radiobutton(st,text="📢 일괄문구 발송",variable=send_mode,value="일괄",command=toggle_send_mode,font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,12))
     tk.Radiobutton(st,text="👥 일괄 다중문구 발송",variable=send_mode,value="다중",command=toggle_send_mode,font=FONT_BOLD_10,bg=BG_CARD,fg="#dc2626",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,20))
     
-    tk.Label(st,text="⏱️ 발송 딜레이:",font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b").pack(side=tk.LEFT,padx=(8,3))
+    # 딜레이 컨트롤 카드
+    delay_card=tk.Frame(st,bg="#eff6ff",bd=1,relief="solid",padx=10,pady=5)
+    delay_card.pack(side=tk.LEFT,padx=(12,6))
+    tk.Label(delay_card,text="⏱️ 발송 딜레이",font=FONT_BOLD_9,bg="#eff6ff",fg="#475569").pack(side=tk.LEFT,padx=(0,6))
     delay_var=tk.StringVar(value="3.0")
-    tk.Spinbox(st,from_=0.5,to=10,increment=0.5,textvariable=delay_var,width=5,font=FONT_BOLD_10,justify="center",bd=1,relief="solid").pack(side=tk.LEFT)
-    tk.Label(st,text="초",font=FONT_REG_10,bg=BG_CARD,fg=COLOR_MUTED).pack(side=tk.LEFT,padx=(2,15))
+    tk.Spinbox(delay_card,from_=0.5,to=10,increment=0.5,textvariable=delay_var,
+               width=5,font=FONT_BOLD_11,justify="center",bd=0,relief="flat",
+               bg="#eff6ff",fg=COLOR_NAVY,buttonbackground="#dbeafe").pack(side=tk.LEFT)
+    tk.Label(delay_card,text="초",font=FONT_BOLD_10,bg="#eff6ff",fg=COLOR_PRIMARY).pack(side=tk.LEFT,padx=(3,0))
 
-    tk.Label(st,text="🔄 자동 재시도:",font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b").pack(side=tk.LEFT,padx=(8,3))
+    # 재시도 컨트롤 카드
+    retry_card=tk.Frame(st,bg="#eff6ff",bd=1,relief="solid",padx=10,pady=5)
+    retry_card.pack(side=tk.LEFT,padx=(0,8))
+    tk.Label(retry_card,text="🔄 자동 재시도",font=FONT_BOLD_9,bg="#eff6ff",fg="#475569").pack(side=tk.LEFT,padx=(0,6))
     retry_var=tk.StringVar(value="1")
-    tk.Spinbox(st,from_=0,to=5,increment=1,textvariable=retry_var,width=4,font=FONT_BOLD_10,justify="center",bd=1,relief="solid").pack(side=tk.LEFT)
-    tk.Label(st,text="회",font=FONT_REG_10,bg=BG_CARD,fg=COLOR_MUTED).pack(side=tk.LEFT,padx=2)
+    tk.Spinbox(retry_card,from_=0,to=5,increment=1,textvariable=retry_var,
+               width=4,font=FONT_BOLD_11,justify="center",bd=0,relief="flat",
+               bg="#eff6ff",fg=COLOR_NAVY,buttonbackground="#dbeafe").pack(side=tk.LEFT)
+    tk.Label(retry_card,text="회",font=FONT_BOLD_10,bg="#eff6ff",fg=COLOR_PRIMARY).pack(side=tk.LEFT,padx=(3,0))
 
     def save_macro_config_settings():
         try:
@@ -2733,29 +2750,60 @@ def create_gui():
     create_btn(qf, "📍 발송 좌표 설정", setup_coord_sms, COLOR_MUTED, COLOR_MUTED_HOVER, font=FONT_BOLD_9).pack(side=tk.RIGHT, padx=3)
     create_btn(qf, "⚡ 즉시 발송 실행", quick_send_action, COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_9).pack(side=tk.RIGHT, padx=3)
 
-    # 4. 테이블 리스트
+    # 4. 테이블 리스트 - 위젯 정의만, pack은 하단 고정 요소 이후에 호출
     tbf=tk.Frame(root,bg=BG_MAIN)
-    tbf.pack(fill=tk.BOTH,expand=True,padx=20,pady=5)
-    
-    ls=tk.LabelFrame(tbf,text=" ⏳ 발송 대기 목록 ",fg=COLOR_PRIMARY,font=FONT_BOLD_11,bg=BG_CARD,bd=1,relief="solid",padx=8,pady=8)
-    ls.pack(side=tk.LEFT,fill=tk.BOTH,expand=True,padx=(0,5))
-    
-    lsc=tk.Scrollbar(ls,orient="vertical")
-    left_table=ttk.Treeview(ls,columns=("n","p","m"),show="headings",yscrollcommand=lsc.set,style="Treeview")
+
+    paned=ttk.PanedWindow(tbf,orient=tk.HORIZONTAL)
+    paned.pack(fill=tk.BOTH,expand=True)
+
+    # 좌측 테이블 — LabelFrame padx/pady=0으로 스크롤바가 가장자리에 딱 붙도록
+    ls=tk.LabelFrame(paned,text=" ⏳ 발송 대기 목록 ",fg=COLOR_PRIMARY,font=FONT_BOLD_11,bg=BG_CARD,bd=1,relief="solid",padx=0,pady=0)
+    paned.add(ls,weight=1)
+
+    ls_inner=tk.Frame(ls,bg=BG_CARD)
+    ls_inner.pack(fill=tk.BOTH,expand=True,padx=2,pady=2)
+
+    lsc=tk.Scrollbar(ls_inner,orient="vertical")
+    lsc_x=tk.Scrollbar(ls_inner,orient="horizontal")
+    left_table=ttk.Treeview(ls_inner,columns=("n","p","m"),show="headings",
+                             yscrollcommand=lsc.set,xscrollcommand=lsc_x.set,style="Treeview")
     lsc.config(command=left_table.yview)
+    lsc_x.config(command=left_table.xview)
     left_table.heading("n",text="No"); left_table.heading("p",text="연락처"); left_table.heading("m",text="발송 문구")
-    left_table.column("n",width=50,anchor="center"); left_table.column("p",width=120,anchor="center"); left_table.column("m",width=280)
-    lsc.pack(side=tk.RIGHT,fill=tk.Y); left_table.pack(fill=tk.BOTH,expand=True,padx=2,pady=2)
-    
-    rs=tk.LabelFrame(tbf,text=" ✅ 처리 결과 리스트 ",fg=COLOR_SUCCESS,font=FONT_BOLD_11,bg=BG_CARD,bd=1,relief="solid",padx=8,pady=8)
-    rs.pack(side=tk.RIGHT,fill=tk.BOTH,expand=True,padx=(5,0))
-    
-    rsc=tk.Scrollbar(rs,orient="vertical")
-    right_table=ttk.Treeview(rs,columns=("n","p","s"),show="headings",yscrollcommand=rsc.set,style="Treeview")
+    left_table.column("n",width=50,minwidth=40,anchor="center",stretch=False)
+    left_table.column("p",width=120,minwidth=90,anchor="center",stretch=False)
+    left_table.column("m",width=280,minwidth=150,stretch=True)
+    lsc.pack(side=tk.RIGHT,fill=tk.Y)
+    lsc_x.pack(side=tk.BOTTOM,fill=tk.X)
+    left_table.pack(fill=tk.BOTH,expand=True)
+
+    # 우측 테이블
+    rs=tk.LabelFrame(paned,text=" ✅ 처리 결과 리스트 ",fg=COLOR_SUCCESS,font=FONT_BOLD_11,bg=BG_CARD,bd=1,relief="solid",padx=0,pady=0)
+    paned.add(rs,weight=1)
+
+    rs_inner=tk.Frame(rs,bg=BG_CARD)
+    rs_inner.pack(fill=tk.BOTH,expand=True,padx=2,pady=2)
+
+    rsc=tk.Scrollbar(rs_inner,orient="vertical")
+    rsc_x=tk.Scrollbar(rs_inner,orient="horizontal")
+    right_table=ttk.Treeview(rs_inner,columns=("n","p","s"),show="headings",
+                              yscrollcommand=rsc.set,xscrollcommand=rsc_x.set,style="Treeview")
     rsc.config(command=right_table.yview)
+    rsc_x.config(command=right_table.xview)
     right_table.heading("n",text="No"); right_table.heading("p",text="연락처"); right_table.heading("s",text="처리 상태")
-    right_table.column("n",width=50,anchor="center"); right_table.column("p",width=130,anchor="center"); right_table.column("s",width=120,anchor="center")
-    rsc.pack(side=tk.RIGHT,fill=tk.Y); right_table.pack(fill=tk.BOTH,expand=True,padx=2,pady=2)
+    right_table.column("n",width=50,minwidth=40,anchor="center",stretch=False)
+    right_table.column("p",width=130,minwidth=90,anchor="center",stretch=False)
+    right_table.column("s",width=120,minwidth=80,anchor="center",stretch=True)
+    rsc.pack(side=tk.RIGHT,fill=tk.Y)
+    rsc_x.pack(side=tk.BOTTOM,fill=tk.X)
+    right_table.pack(fill=tk.BOTH,expand=True)
+
+    # 마우스 휠 스크롤
+    def _on_wheel(event,table):
+        delta = -1*int(event.delta) if IS_MAC else -1*int(event.delta/120)
+        table.yview_scroll(delta,"units")
+    left_table.bind("<MouseWheel>",lambda e:_on_wheel(e,left_table))
+    right_table.bind("<MouseWheel>",lambda e:_on_wheel(e,right_table))
 
     def on_left_double_click(event):
         item = left_table.focus()
@@ -2767,8 +2815,7 @@ def create_gui():
             if messagebox.askyesno("삭제 확인", f"{vals[1]} 번호를 발송 목록에서 삭제하시겠습니까?"):
                 global data, start_index, registered_indices, failed_indices
                 data = data.drop(row_idx).reset_index(drop=True)
-                
-                # Shift indices after row_idx
+
                 new_reg = set()
                 for idx in registered_indices:
                     if idx < row_idx:
@@ -2776,7 +2823,7 @@ def create_gui():
                     elif idx > row_idx:
                         new_reg.add(idx - 1)
                 registered_indices = new_reg
-                
+
                 new_fail = set()
                 for idx in failed_indices:
                     if idx < row_idx:
@@ -2784,10 +2831,10 @@ def create_gui():
                     elif idx > row_idx:
                         new_fail.add(idx - 1)
                 failed_indices = new_fail
-                
+
                 if start_index > row_idx:
                     start_index = max(0, start_index - 1)
-                
+
                 update_tables()
                 update_progress()
                 update_status(f"목록에서 삭제됨: {vals[1]}")
@@ -2815,11 +2862,64 @@ def create_gui():
     left_table.bind("<Double-1>", on_left_double_click)
     right_table.bind("<Double-1>", on_right_double_click)
 
-    # ✅ 3.5 발송 미리보기 패널
+    # ── 하단 고정 영역: BOTTOM 순서로 선언 (화면 아래→위 순) ──
+
+    # 1) 최하단 구분선
+    tk.Frame(root,bg="#94a3b8",pady=1).pack(fill=tk.X,side=tk.BOTTOM)
+
+    # 2) 상태 표시줄
+    status_var=tk.StringVar(value="대기 중")
+    tk.Label(root,textvariable=status_var,font=FONT_BOLD_9,bg="#cbd5e1",fg=COLOR_NAVY,anchor="w",padx=15,pady=5).pack(fill=tk.X,side=tk.BOTTOM)
+
+    # 3) 메인 컨트롤 패널
+    ct=tk.Frame(root,bg=COLOR_NAVY,padx=15,pady=10)
+    ct.pack(fill=tk.X,side=tk.BOTTOM)
+
+    btn_start=create_btn(ct, "▶ 번호등록 실행", start_worker, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, width=16, font=FONT_BOLD_11)
+    btn_start.pack(side=tk.LEFT,padx=(0,4))
+
+    btn_pause=create_btn(ct, "⏸ 일시정지", lambda:set_pause_state(True), "#f59e0b", "#d97706", font=FONT_BOLD_10, state=tk.DISABLED)
+    btn_pause.pack(side=tk.LEFT,padx=2)
+
+    btn_resume=create_btn(ct, "▶ 재개", lambda:set_pause_state(False), "#06b6d4", "#0891b2", font=FONT_BOLD_10, state=tk.DISABLED)
+    btn_resume.pack(side=tk.LEFT,padx=2)
+
+    btn_stop=create_btn(ct, "⏹ 중지", lambda:stop_run(), COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10, state=tk.DISABLED)
+    btn_stop.pack(side=tk.LEFT,padx=2)
+
+    tk.Frame(ct,width=12,bg=COLOR_NAVY).pack(side=tk.LEFT)
+
+    cfg_macro = load_macro_config()
+    reg_set = all(s.get("coord") is not None for s in cfg_macro["번호등록"] if s.get("type") in ["click_type", "click_only"])
+    sms_set = all(s.get("coord") is not None for s in cfg_macro["문자발송"] if s.get("type") in ["click_type", "click_only"])
+    btn_text = "🔄 좌표 재설정 (설정됨)" if (reg_set and sms_set) else "🔄 좌표 재설정 (미설정)"
+    btn_coord_reset=create_btn(ct, btn_text, reset_coordinates, "#334155", "#475569", font=FONT_BOLD_10)
+    btn_coord_reset.pack(side=tk.LEFT,padx=3)
+
+    create_btn(ct, "↺ 리스트 초기화", reset_all, "#334155", "#475569", font=FONT_BOLD_10).pack(side=tk.LEFT,padx=3)
+    create_btn(ct, "종료", root.destroy, COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10).pack(side=tk.RIGHT,padx=0)
+
+    # 4) 유틸 및 진행률 패널
+    tk.Frame(root, bg=COLOR_BORDER, height=1).pack(fill=tk.X,side=tk.BOTTOM)
+    pf=tk.Frame(root,bg="#e2e8f0",padx=15,pady=6)
+    pf.pack(fill=tk.X,side=tk.BOTTOM)
+
+    create_btn(pf, "📄 발송로그 열기", open_log_file, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=(0,3))
+    create_btn(pf, "📁 저장폴더 열기", open_log_folder, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
+    create_btn(pf, "📊 결과 엑셀 보고서 저장", export_results_to_excel, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
+
+    progress_var=tk.IntVar(value=0)
+    ttk.Progressbar(pf,variable=progress_var,maximum=100,length=300,style="TProgressbar").pack(side=tk.LEFT,fill=tk.X,expand=True,padx=15)
+
+    lbl_progress=tk.Label(pf,text="  완료 0 | 실패 0 | 남은 0  (0%)",font=FONT_BOLD_10,bg="#e2e8f0",fg=COLOR_PRIMARY)
+    lbl_progress.pack(side=tk.RIGHT)
+
+    # 5) 발송 미리보기 패널
+    tk.Frame(root, bg=COLOR_BORDER, height=1).pack(fill=tk.X,side=tk.BOTTOM)
     preview_frame = tk.LabelFrame(root, text=" 📋 발송 미리보기 (실시간) ",
                                   font=FONT_BOLD_11, bg=BG_CARD, fg="#dc2626",
                                   bd=1, relief="solid", padx=10, pady=5)
-    preview_frame.pack(fill=tk.X, padx=20, pady=(3, 2))
+    preview_frame.pack(fill=tk.X, padx=20, pady=(3,2), side=tk.BOTTOM)
 
     pv_top = tk.Frame(preview_frame, bg=BG_CARD)
     pv_top.pack(fill=tk.X, pady=(0, 3))
@@ -2832,56 +2932,13 @@ def create_gui():
                                        font=FONT_BOLD_10, bg=BG_CARD, fg="#dc2626")
     preview_countdown_label.pack(side=tk.RIGHT, padx=5)
 
-    preview_text_widget = tk.Text(preview_frame, height=4, font=FONT_REG_10,
+    preview_text_widget = tk.Text(preview_frame, height=2, font=FONT_REG_10,
                                   bd=1, relief="solid", padx=8, pady=5,
                                   state=tk.DISABLED, bg="#fafafa", wrap=tk.WORD)
     preview_text_widget.pack(fill=tk.X)
 
-    # 4. 하단 유틸 및 진행률 패널
-    pf=tk.Frame(root,bg=BG_MAIN)
-    pf.pack(fill=tk.X,padx=20,pady=(5,3))
-    
-    create_btn(pf, "📄 발송로그 열기", open_log_file, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=(0,3))
-    create_btn(pf, "📁 저장폴더 열기", open_log_folder, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
-    create_btn(pf, "📊 결과 엑셀 보고서 저장", export_results_to_excel, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
-    
-    progress_var=tk.IntVar(value=0)
-    ttk.Progressbar(pf,variable=progress_var,maximum=100,length=300,style="TProgressbar").pack(side=tk.LEFT,fill=tk.X,expand=True,padx=15)
-    
-    lbl_progress=tk.Label(pf,text="  완료 0 | 실패 0 | 남은 0  (0%)",font=FONT_BOLD_10,bg=BG_MAIN,fg=COLOR_PRIMARY)
-    lbl_progress.pack(side=tk.RIGHT)
-
-    # 5. 메인 컨트롤 패널
-    ct=tk.Frame(root,bg=BG_MAIN)
-    ct.pack(fill=tk.X,padx=20,pady=(0,5))
-    
-    btn_start=create_btn(ct, "▶ 번호등록 실행", start_worker, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, width=16, font=FONT_BOLD_10)
-    btn_start.pack(side=tk.LEFT,padx=(0,3))
-    
-    btn_pause=create_btn(ct, "⏸ 일시정지", lambda:set_pause_state(True), "#f59e0b", "#d97706", font=FONT_BOLD_10, state=tk.DISABLED)
-    btn_pause.pack(side=tk.LEFT,padx=2)
-    
-    btn_resume=create_btn(ct, "▶ 재개", lambda:set_pause_state(False), "#06b6d4", "#0891b2", font=FONT_BOLD_10, state=tk.DISABLED)
-    btn_resume.pack(side=tk.LEFT,padx=2)
-    
-    btn_stop=create_btn(ct, "⏹ 중지", lambda:stop_run(), COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10, state=tk.DISABLED)
-    btn_stop.pack(side=tk.LEFT,padx=2)
-    
-    tk.Frame(ct,width=10,bg=BG_MAIN).pack(side=tk.LEFT)
-    
-    cfg_macro = load_macro_config()
-    reg_set = all(s.get("coord") is not None for s in cfg_macro["번호등록"] if s.get("type") in ["click_type", "click_only"])
-    sms_set = all(s.get("coord") is not None for s in cfg_macro["문자발송"] if s.get("type") in ["click_type", "click_only"])
-    btn_text = "🔄 좌표 재설정 (설정됨)" if (reg_set and sms_set) else "🔄 좌표 재설정 (미설정)"
-    btn_coord_reset=create_btn(ct, btn_text, reset_coordinates, COLOR_MUTED, COLOR_MUTED_HOVER, font=FONT_BOLD_10)
-    btn_coord_reset.pack(side=tk.LEFT,padx=3)
-    
-    create_btn(ct, "↺ 리스트 초기화", reset_all, "#94a3b8", "#64748b", font=FONT_BOLD_10).pack(side=tk.LEFT,padx=3)
-    create_btn(ct, "종료", root.destroy, COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10).pack(side=tk.RIGHT,padx=0)
-
-    status_var=tk.StringVar(value="대기 중")
-    tk.Label(root,textvariable=status_var,font=FONT_BOLD_9,bg="#cbd5e1",fg=COLOR_NAVY,anchor="w",padx=15,pady=5).pack(fill=tk.X,side=tk.BOTTOM)
-    tk.Frame(root,bg="#94a3b8",pady=1).pack(fill=tk.X,side=tk.BOTTOM)
+    # ── 테이블이 남은 공간을 모두 채움 ──
+    tbf.pack(fill=tk.BOTH,expand=True,padx=20,pady=5)
 
     def set_pause_state(s):
         global is_paused; is_paused=s
