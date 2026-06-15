@@ -217,9 +217,14 @@ def send_discord_message(webhook_url, payload_or_content):
                 data=json.dumps(data).encode("utf-8"),
                 headers={"Content-Type": "application/json", "User-Agent": "urllib-discord-bot"}
             )
-            with urllib.request.urlopen(req, timeout=10) as response:
+            import ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
                 pass
-        except Exception:
+        except Exception as e:
+            print(f"Discord Alert Error: {e}")
             pass
     threading.Thread(target=worker, daemon=True).start()
 
@@ -2308,10 +2313,13 @@ def open_admin_panel():
         }
         def test_worker():
             try:
-                import urllib.request, json as _j
+                import urllib.request, json as _j, ssl
                 req = urllib.request.Request(webhook_url, data=_j.dumps(test_payload).encode("utf-8"),
                                              headers={"Content-Type": "application/json", "User-Agent": "urllib-discord-bot"})
-                with urllib.request.urlopen(req, timeout=5): pass
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                with urllib.request.urlopen(req, timeout=5, context=ctx): pass
                 win.after(0, lambda: messagebox.showinfo("성공", "디스코드 테스트 메세지가 전송되었습니다.\n디스코드 채널을 확인하세요.", parent=win))
             except Exception as e:
                 win.after(0, lambda: messagebox.showerror("실패", f"디스코드 웹훅 전송 실패:\n{e}", parent=win))
