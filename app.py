@@ -2520,7 +2520,9 @@ def create_gui():
     use_limit_var = tk.BooleanVar(value=cfg_settings.get("use_limit", False))
     limit_var = tk.StringVar(value=str(cfg_settings.get("daily_limit", 500)))
 
-    root.geometry("1200x920" if IS_MAC else "1200x950")
+    root = tk.Tk()
+    root.title("📱 CIS 통합 매크로 (세은아빠)")
+    root.geometry("1200x800" if IS_MAC else "1200x840")
     root.configure(bg=BG_MAIN)
 
     if IS_MAC:
@@ -2832,7 +2834,7 @@ def create_gui():
                                        font=FONT_BOLD_10, bg=BG_CARD, fg="#dc2626")
     preview_countdown_label.pack(side=tk.RIGHT, padx=5)
 
-    preview_text_widget = tk.Text(preview_frame, height=6, font=FONT_REG_10,
+    preview_text_widget = tk.Text(preview_frame, height=4, font=FONT_REG_10,
                                   bd=1, relief="solid", padx=8, pady=5,
                                   state=tk.DISABLED, bg="#fafafa", wrap=tk.WORD)
     preview_text_widget.pack(fill=tk.X)
