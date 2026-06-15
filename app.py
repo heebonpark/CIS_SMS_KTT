@@ -114,6 +114,7 @@ coord_input = coord_msg = coord_phone = coord_send = coord_confirm = None
 data = pd.DataFrame(columns=["전화번호", "발송문자"])
 start_index = 0
 loaded_file_path = ""   # 엑셀 결과 기록용
+_multi_preview = {}      # ✅ 다중 모드 테이블 미리보기 {idx: {"display_phone": "...", "preview": "..."}}
 PASTE_DELAY = 0.3
 REG_DELAY_INPUT = 0.05
 REG_DELAY_TAB = 0.1
@@ -524,16 +525,60 @@ def refresh_template_dropdown():
 #  ✅ 3. 엑셀 결과 기록
 # =========================================================
 def write_result_to_excel(row_idx, status_text):
-    """활성 엑셀 시트 D열에 발송 결과 기록 (체크박스 활성 시)"""
+    """활성 엑셀에 발송 결과 기록
+    - 일반 모드: D열 (row_idx+2 행)
+    - 다중 모드: G열 (_multi_preview에 저장된 _excel_row로 직접 기록)
+    """
     try:
         if not excel_writeback_var.get(): return
-        app = xw.apps.active
-        if not app: return
-        sheet = app.books.active.sheets.active
-        excel_row = row_idx + 2  # 1행=헤더, 0-indexed → +2
+        xlapp = xw.apps.active
+        if not xlapp: return
+        sheet = xlapp.books.active.sheets.active
         now = datetime.now().strftime("%H:%M:%S")
-        sheet.range(f'D{excel_row}').value = f"{status_text} ({now})"
-    except: pass
+        result_val = f"{status_text} ({now})"
+
+        mode = send_mode.get() if send_mode else "개별"
+
+        if mode == "다중":
+            # ✅ G1 헤더 확인 및 설정
+            g1_val = sheet.range('G1').value
+            if not g1_val or str(g1_val).strip() in ('', 'None'):
+                sheet.range('G1').value = "발송결과"
+
+            # ✅ 1순위: _multi_preview에 저장된 정확한 엑셀 행번호 사용
+            target_row = None
+            if row_idx in _multi_preview:
+                target_row = _multi_preview[row_idx].get("excel_row")
+
+            # ✅ 2순위 폴백: used_range 전체 읽어서 B열 전화번호로 매칭
+            #    (A열은 빈 셀이 있어 expand로는 안 됨 → used_range 사용)
+            if not target_row:
+                phone = data.iloc[row_idx]["전화번호"] if row_idx < len(data) else ""
+                if phone:
+                    used = sheet.used_range
+                    last_row = used.rows.count if used else 1
+                    b_vals = sheet.range((1, 2), (last_row, 2)).value
+                    if not isinstance(b_vals, list):
+                        b_vals = [[b_vals]]
+                    phone_digits = ''.join(filter(str.isdigit, phone))
+                    for r, cell in enumerate(b_vals):
+                        cell_val = cell[0] if isinstance(cell, list) else cell
+                        if cell_val is None:
+                            continue
+                        cell_digits = ''.join(filter(str.isdigit, str(cell_val)))
+                        # 마지막 9자리로 비교 (앞 0 여부 무관)
+                        if cell_digits[-9:] == phone_digits[-9:]:
+                            target_row = r + 1  # 1-indexed
+                            break
+
+            if target_row:
+                sheet.range(f'G{target_row}').value = result_val
+        else:
+            # 일반 모드: D열
+            excel_row = row_idx + 2
+            sheet.range(f'D{excel_row}').value = result_val
+    except Exception:
+        pass
 
 def export_results_to_excel():
     """현재 로드된 전체 목록 및 발송 결과를 정리하여 엑셀 파일로 저장"""
@@ -1042,6 +1087,7 @@ def process_and_set_data(df_raw, silent=False):
         dc['발송문자']=dc['발송문자'].astype(str).str.strip()
         data=dc[["전화번호","발송문자"]].reset_index(drop=True)
         registered_indices.clear(); failed_indices.clear(); completion_times.clear(); start_index=0
+        _multi_preview.clear()  # ✅ 다중 모드 미리보기 초기화
         update_tables(); update_progress()
         if not silent:
             write_usage_log("데이터 로드",f"{len(data)}건")
@@ -1050,6 +1096,10 @@ def process_and_set_data(df_raw, silent=False):
 
 def load_from_active_excel():
     global loaded_file_path
+    # ✅ 다중 모드일 때는 A~F열 로드로 자동 전환
+    if send_mode and send_mode.get() == "다중":
+        load_multi_customer_from_excel()
+        return
     try:
         app=xw.apps.active
         if not app: messagebox.showwarning("실패","엑셀이 열려있지 않습니다."); return
@@ -1076,6 +1126,241 @@ def load_from_file_path():
         filename_label.config(text=f"📂 파일: {os.path.basename(fp)}")
     except Exception as e: messagebox.showerror("오류",str(e))
 
+
+# =========================================================
+#  ✅ 다중 관리고객 SP담당자 문자발송 로드
+#     엑셀 구조: A=담당자, B=연락처, C=계약번호, D=상호, E=상태, F=합산월정료
+#     → 담당자+연락처 기준 그룹핑 → 1인 1메시지로 합산
+# =========================================================
+def format_won(val):
+    """숫자를 천 단위 콤마 원 표기로 변환"""
+    try:
+        n = int(float(str(val).replace(",", "").replace("원", "").strip()))
+        return f"{n:,}원"
+    except:
+        return str(val)
+
+
+def load_multi_customer_from_excel():
+    """활성 엑셀 A~F열 → 담당자별 그룹 메시지 생성"""
+    global loaded_file_path
+    try:
+        app = xw.apps.active
+        if not app:
+            messagebox.showwarning("실패", "엑셀이 열려있지 않습니다.")
+            return
+        sheet = app.books.active.sheets.active
+
+        # ✅ 핵심 수정: used_range로 전체 사용 영역 읽기 (A열 빈 셀에서 멈추지 않음)
+        used = sheet.used_range
+        if used is None or used.rows.count < 2:
+            messagebox.showwarning("데이터 없음", "2행 이상의 데이터가 필요합니다.")
+            return
+
+        # 필요한 열 수 확보 (최소 F열=6열)
+        last_row = used.rows.count
+        last_col = max(used.columns.count, 6)
+        raw = sheet.range((1, 1), (last_row, last_col)).value
+
+        if not raw or len(raw) < 2:
+            messagebox.showwarning("데이터 없음", "2행 이상의 데이터가 필요합니다.")
+            return
+
+        # DataFrame 생성 (1행=헤더)
+        headers = [str(h).strip() if h else f"col{i}" for i, h in enumerate(raw[0])]
+        df = pd.DataFrame(raw[1:], columns=headers[:len(raw[0])])
+
+        # 열 매핑
+        col_map = {}
+        targets = ["담당자", "연락처", "계약번호", "상호", "상태", "합산월정료"]
+        for i, t in enumerate(targets):
+            matched = [c for c in df.columns if t in str(c)]
+            col_map[t] = matched[0] if matched else (df.columns[i] if i < len(df.columns) else None)
+
+        c_name = col_map.get("담당자")
+        c_phone = col_map.get("연락처")
+        if not c_name or not c_phone:
+            messagebox.showerror("열 오류",
+                "A열=담당자, B열=연락처가 필요합니다.\n\n"
+                "엑셀 구조:\n  A=담당자  B=연락처  C=계약번호\n  D=상호  E=상태  F=합산월정료")
+            return
+
+        c_contract = col_map.get("계약번호")
+        c_company = col_map.get("상호")
+        c_status = col_map.get("상태")
+        c_fee = col_map.get("합산월정료")
+
+        # ✅ 담당자/연락처 빈 셀 forward-fill
+        df[c_name] = df[c_name].replace(['', 'None', 'nan', None], pd.NA)
+        df[c_phone] = df[c_phone].replace(['', 'None', 'nan', None], pd.NA)
+        df[c_name] = df[c_name].ffill()
+        df[c_phone] = df[c_phone].ffill()
+
+        # ✅ 원본 엑셀 행 번호 보존 (ffill 전에 담당자가 실제로 있었던 행 = 해당 그룹의 첫 행)
+        #    엑셀에서 raw[1:]부터 읽었으므로 엑셀 행번호 = DataFrame index + 2 (1-based + header)
+        df['_orig_row'] = range(2, len(df) + 2)  # 헤더=1행, 데이터=2행부터
+
+        # ✅ 담당자가 실제로 있었던 행을 그룹 대표 행으로 기록
+        #    (ffill 이후에도 원본 담당자 행 위치를 알기 위해 사전 추출)
+        name_rows = df[df[c_name].notna()][['_orig_row', c_name, c_phone]].copy()
+        # 그룹의 첫 번째 원본 행: (담당자, 연락처) → 엑셀 행번호
+        group_excel_row = {}
+        for _, nr in name_rows.iterrows():
+            key = (str(nr[c_name]).strip(), str(nr[c_phone]).strip())
+            if key not in group_excel_row:
+                group_excel_row[key] = int(nr['_orig_row'])
+
+        # 완전 빈 행 제거 (계약번호+상호 둘 다 없는 행)
+        def row_has_data(row):
+            has_contract = c_contract and pd.notna(row.get(c_contract)) and str(row.get(c_contract, '')).strip() not in ('', 'None', 'nan')
+            has_company = c_company and pd.notna(row.get(c_company)) and str(row.get(c_company, '')).strip() not in ('', 'None', 'nan')
+            return has_contract or has_company
+        df = df[df.apply(row_has_data, axis=1)]
+
+        if df.empty:
+            messagebox.showwarning("데이터 없음", "유효한 계약 데이터가 없습니다.")
+            return
+
+        # 연락처 정제
+        df = df.copy()
+        df[c_phone] = df[c_phone].astype(str).str.replace(".0", "", regex=False).str.strip()
+        df[c_phone] = df[c_phone].str.replace(r'[^0-9]', '', regex=True)
+        df.loc[df[c_phone].str.startswith('8210'), c_phone] = '0' + df.loc[df[c_phone].str.startswith('8210'), c_phone].str[2:]
+        df[c_phone] = df[c_phone].str.zfill(11)
+        df = df[df[c_phone].str.match(r'^01[016789]\d{7,8}$', na=False)]
+
+        if df.empty:
+            messagebox.showwarning("데이터 없음", "유효한 연락처가 없습니다.")
+            return
+
+        # 계약번호/상호 정제
+        if c_contract:
+            df[c_contract] = df[c_contract].astype(str).str.replace(".0", "", regex=False).str.strip()
+        if c_company:
+            df[c_company] = df[c_company].astype(str).str.strip()
+
+        # ✅ 담당자+연락처 기준 그룹핑 → 1인 1메시지 (원래 행 순서 유지)
+        seen_keys = []  # 순서 보존
+        key_groups = {}
+        for _, row in df.iterrows():
+            key = (str(row[c_name]).strip(), str(row[c_phone]).strip())
+            if key not in key_groups:
+                key_groups[key] = []
+                seen_keys.append(key)
+            key_groups[key].append(row)
+
+        result_rows = []
+
+        for (담당자, 연락처) in seen_keys:
+            group_rows = key_groups[(담당자, 연락처)]
+            msg_lines = [
+                "안녕하세요. 사업지원팀입니다.",
+                "아래 보내드리는 관리고객에 대해서",
+                "방문활동 조치하여 주시기 바랍니다.",
+                ""
+            ]
+            preview_companies = []
+
+            for row in group_rows:
+                company = str(row.get(c_company, "")).strip() if c_company and pd.notna(row.get(c_company)) else ""
+                contract = str(row.get(c_contract, "")).strip().replace(".0", "") if c_contract and pd.notna(row.get(c_contract)) else ""
+                fee = format_won(row.get(c_fee)) if c_fee and pd.notna(row.get(c_fee)) else ""
+
+                if company and company not in ('None', 'nan', ''):
+                    msg_lines.append(f"■ {company}")
+                    preview_companies.append(company)
+                if contract and contract not in ('None', 'nan', ''):
+                    msg_lines.append(f"계약번호: {contract}")
+                if fee and fee not in ('None', 'nan', '0원', ''):
+                    msg_lines.append(f"월정료: {fee}")
+                msg_lines.append("")
+
+            full_msg = "\n".join(msg_lines).strip()
+
+            n_contracts = len(group_rows)
+            preview_list = preview_companies[:2]
+            preview_text = f"{담당자} ({n_contracts}건) " + " ".join(f"■{c}" for c in preview_list)
+            if len(preview_companies) > 2:
+                preview_text += f" 외 {len(preview_companies)-2}건"
+
+            # ✅ 원본 엑셀 행번호 조회 (G열 쓰기용)
+            excel_row_num = group_excel_row.get((담당자, 연락처), None)
+
+            result_rows.append({
+                "전화번호": 연락처,
+                "발송문자": full_msg,
+                "_미리보기": preview_text,
+                "_담당자": str(담당자),
+                "_계약수": n_contracts,
+                "_excel_row": excel_row_num,  # ✅ 엑셀 G열 기록 위치
+            })
+
+        result_df = pd.DataFrame(result_rows)
+        process_and_set_data(result_df, silent=True)
+        loaded_file_path = ""
+
+        # ✅ 다중 모드 미리보기 + G열 행번호 저장
+        global _multi_preview
+        _multi_preview = {}
+        for idx, row in result_df.iterrows():
+            phone = row["전화번호"]
+            preview = row.get("_미리보기", row["발송문자"][:40])
+            담당자 = row.get("_담당자", "")
+            _multi_preview[idx] = {
+                "display_phone": f"{담당자} ({phone})" if 담당자 else phone,
+                "preview": preview,
+                "excel_row": row.get("_excel_row"),  # ✅ 정확한 엑셀 행번호
+                "phone": phone,
+                "name": str(담당자),
+            }
+
+        update_table_headers_multi(True)
+        update_tables()
+        update_progress()
+
+        total_contracts = len(df)
+        total_sp = len(result_rows)
+        filename_label.config(text=f"👥 다중관리고객: SP {total_sp}명 / 계약 {total_contracts}건 로드 완료")
+
+        # ✅ 확인 팝업에 미리보기 2건 표시
+        preview_msg = ""
+        for i, r in enumerate(result_rows[:2]):
+            preview_msg += f"\n{'─'*35}\n"
+            preview_msg += f"📱 {r['_담당자']} ({r['전화번호']}) — {r['_계약수']}건\n"
+            # 메시지 앞부분만
+            msg_preview = r["발송문자"][:150]
+            if len(r["발송문자"]) > 150:
+                msg_preview += "..."
+            preview_msg += msg_preview
+
+        messagebox.showinfo("👥 다중 관리고객 로드 완료",
+            f"SP 담당자: {total_sp}명  /  총 계약: {total_contracts}건\n"
+            f"{preview_msg}\n\n"
+            f"{'─'*35}\n"
+            f"[문자발송 실행] 버튼을 누르면 발송됩니다.")
+
+    except Exception as e:
+        messagebox.showerror("다중 관리고객 오류", f"{str(e)}\n\n엑셀 구조를 확인하세요:\n  A=담당자 B=연락처 C=계약번호\n  D=상호 E=상태 F=합산월정료")
+
+
+def update_table_headers_multi(is_multi):
+    """다중 모드일 때 테이블 헤더 변경"""
+    try:
+        if is_multi:
+            left_table.heading("n", text="No")
+            left_table.heading("p", text="담당자(연락처)")
+            left_table.heading("m", text="계약 건수 / 메시지 미리보기")
+            left_table.column("p", width=150)
+            left_table.column("m", width=250)
+        else:
+            left_table.heading("n", text="No")
+            left_table.heading("p", text="연락처")
+            left_table.heading("m", text="발송 문구")
+            left_table.column("p", width=120)
+            left_table.column("m", width=280)
+    except:
+        pass
+
 # =========================================================
 #  GUI 헬퍼
 # =========================================================
@@ -1095,6 +1380,52 @@ def get_retry_count():
     try: return max(0,int(retry_var.get()))
     except: return 1
 def update_status(t): root.after(0,lambda:status_var.set(t))
+
+def update_preview(idx, total, phone, message, label="발송 예정"):
+    """발송 미리보기 패널 업데이트 (쓰레드 안전)"""
+    def _update():
+        try:
+            # 상단 정보
+            담당자 = _multi_preview[idx]["display_phone"] if idx in _multi_preview else phone
+            preview_info_label.config(
+                text=f"📤 [{idx+1}/{total}] {담당자}  —  {label}",
+                fg="#dc2626" if "긴급" in label else "#1e293b"
+            )
+            # 메시지 본문
+            preview_text_widget.config(state=tk.NORMAL)
+            preview_text_widget.delete("1.0", tk.END)
+            preview_text_widget.insert(tk.END, message)
+            preview_text_widget.config(state=tk.DISABLED)
+            # 스크롤 맨 위로
+            preview_text_widget.see("1.0")
+        except:
+            pass
+    root.after(0, _update)
+
+def update_preview_countdown(sec):
+    """미리보기 카운트다운 표시"""
+    def _update():
+        try:
+            if sec > 0:
+                preview_countdown_label.config(text=f"⏱ {sec}초 후 발송 (⏸ 일시정지로 긴급 중지)", fg="#dc2626")
+            else:
+                preview_countdown_label.config(text="📤 발송 중...", fg="#2563eb")
+        except:
+            pass
+    root.after(0, _update)
+
+def clear_preview():
+    """미리보기 초기화"""
+    def _update():
+        try:
+            preview_info_label.config(text="대기 중", fg="#1e293b")
+            preview_countdown_label.config(text="")
+            preview_text_widget.config(state=tk.NORMAL)
+            preview_text_widget.delete("1.0", tk.END)
+            preview_text_widget.config(state=tk.DISABLED)
+        except:
+            pass
+    root.after(0, _update)
 def update_progress():
     total=len(data); done=len(registered_indices); fail=len(failed_indices)
     left=total-done-fail; pct=int((done+fail)/total*100) if total else 0
@@ -1103,12 +1434,21 @@ def update_tables():
     left_table.delete(*left_table.get_children())
     for i,r in data.iterrows():
         if i not in registered_indices and i not in failed_indices:
-            left_table.insert("","end",values=(i+1,r["전화번호"],r["발송문자"][:30]))
+            # ✅ 다중 모드 미리보기가 있으면 사용
+            if i in _multi_preview:
+                mp = _multi_preview[i]
+                left_table.insert("","end",values=(i+1, mp["display_phone"], mp["preview"]))
+            else:
+                left_table.insert("","end",values=(i+1,r["전화번호"],r["발송문자"][:40]))
     right_table.delete(*right_table.get_children())
     for i in sorted(registered_indices):
-        right_table.insert("","end",values=(i+1,data.loc[i,"전화번호"],"✅ 완료"))
+        phone = data.loc[i,"전화번호"]
+        display = _multi_preview[i]["display_phone"] if i in _multi_preview else phone
+        right_table.insert("","end",values=(i+1, display, "✅ 완료"))
     for i in sorted(failed_indices):
-        right_table.insert("","end",values=(i+1,data.loc[i,"전화번호"],"❌ 실패"))
+        phone = data.loc[i,"전화번호"]
+        display = _multi_preview[i]["display_phone"] if i in _multi_preview else phone
+        right_table.insert("","end",values=(i+1, display, "❌ 실패"))
 def get_current_mode(): return work_mode.get()
 
 # =========================================================
@@ -1134,18 +1474,33 @@ def setup_coord_dynamic(mode):
         if not coord:
             messagebox.showwarning("취소", "좌표 설정이 취소되었습니다.")
             return False
-        s["coord"] = coord
+        # ✅ 좌표를 리스트로 확실히 변환 (JSON 직렬화 안전)
+        s["coord"] = [int(coord[0]), int(coord[1])]
         
     save_macro_config(cfg)
     macro_config = cfg
     
+    # ✅ 저장 후 검증: 파일에서 다시 읽어서 좌표 확인
+    verify_cfg = load_macro_config()
+    verify_steps = [s for s in verify_cfg.get(mode, []) if s.get("type") in ["click_type", "click_only"]]
+    all_ok = all(s.get("coord") is not None for s in verify_steps)
+    
     try:
-        btn_coord_reset.config(text="🔄 좌표 재설정 (설정됨)")
+        btn_coord_reset.config(text="🔄 좌표 재설정 (설정됨)" if all_ok else "🔄 좌표 재설정 (⚠️ 저장 실패)")
     except:
         pass
         
-    summary = "\n".join([f"• {s['name']}: {s['coord']}" for s in coord_steps])
-    messagebox.showinfo("🎯 완료", f"[{mode}] 좌표 설정이 완료되었습니다!\n\n{summary}\n\n이제 실행 버튼을 누르세요.")
+    summary = "\n".join([f"  {s['name']}: {s.get('coord', '미설정')}" for s in verify_steps])
+    
+    if all_ok:
+        messagebox.showinfo("🎯 좌표 설정 완료",
+            f"[{mode}] 좌표가 저장되었습니다!\n\n{summary}\n\n"
+            f"[▶ {mode} 실행] 버튼을 눌러주세요.")
+    else:
+        messagebox.showwarning("⚠️ 저장 확인 필요",
+            f"좌표 저장 후 재확인 결과 일부 누락:\n\n{summary}\n\n다시 설정해 주세요.")
+        return False
+        
     return True
 
 def setup_coord_registration():
@@ -1158,16 +1513,34 @@ def run_macro_for_row(mode, phone_val, msg_val, row_idx):
     prefix = "즉시발송" if row_idx == -2 else f"{row_idx+1}"
     
     try:
+        # ✅ 첫 번째 발송: 대상 창 포커스 확보용 사전 클릭
+        if row_idx <= 0:
+            first_coord = None
+            for s in steps:
+                if s.get("type") in ["click_type", "click_only"] and s.get("coord"):
+                    first_coord = s["coord"]; break
+            if first_coord:
+                update_status(f"[{prefix}] 창 포커스 확보 중...")
+                pyautogui.click(*first_coord)
+                time.sleep(1.0)
+                pyautogui.click(*first_coord)  # 한 번 더 클릭
+                time.sleep(0.5)
+
         for i, s in enumerate(steps):
             stype = s.get("type")
             name = s.get("name", f"단계 {i+1}")
             coord = s.get("coord")
             
-            update_status(f"[{prefix}] {name}")
-            
             if stype == "click_type":
-                if not coord: continue
-                pyautogui.click(*coord); time.sleep(0.3)
+                if not coord:
+                    update_status(f"⚠️ [{prefix}] {name} — 좌표 미설정! 건너뜀")
+                    write_log("좌표오류", f"{name} 좌표 None", f"mode={mode}")
+                    time.sleep(1)
+                    continue
+                update_status(f"[{prefix}] {name} → ({coord[0]},{coord[1]})")
+                # ✅ 트리플클릭으로 필드 내용 전체 선택 (웹 앱에서 Ctrl+A보다 안정적)
+                pyautogui.click(*coord, clicks=3, interval=0.1)
+                time.sleep(0.3)
                 pyautogui.hotkey(MODIFIER, "a"); time.sleep(0.15)
                 pyautogui.press("backspace"); time.sleep(0.3)
                 
@@ -1182,7 +1555,12 @@ def run_macro_for_row(mode, phone_val, msg_val, row_idx):
                 safe_input(val); time.sleep(delay)
                 
             elif stype == "click_only":
-                if not coord: continue
+                if not coord:
+                    update_status(f"⚠️ [{prefix}] {name} — 좌표 미설정! 건너뜀")
+                    write_log("좌표오류", f"{name} 좌표 None", f"mode={mode}")
+                    time.sleep(1)
+                    continue
+                update_status(f"[{prefix}] {name} → 클릭({coord[0]},{coord[1]}) + {delay}초")
                 pyautogui.click(*coord); time.sleep(0.15)
                 if s.get("press_enter", True):
                     pyautogui.press("enter")
@@ -1190,14 +1568,17 @@ def run_macro_for_row(mode, phone_val, msg_val, row_idx):
                 
             elif stype == "key":
                 key_val = s.get("key_value", "enter")
+                update_status(f"[{prefix}] {name} → 키입력({key_val})")
                 pyautogui.press(key_val); time.sleep(delay)
                 
             elif stype == "delay":
                 d_val = float(s.get("delay_value", 1.0))
+                update_status(f"[{prefix}] {name} → {d_val}초 대기")
                 time.sleep(d_val)
                 
         return True
     except Exception as e:
+        update_status(f"❌ [{prefix}] 매크로 오류: {e}")
         write_log("오류", f"매크로 실행 실패: {e}")
         return False
 
@@ -1239,13 +1620,32 @@ def sms_send_one(idx, phone, message):
     return run_macro_for_row("문자발송", phone, message, idx)
 
 def sms_worker():
-    global is_running, completion_times, is_paused
+    global is_running, completion_times, is_paused, data
     is_running=True; set_buttons_running(True)
     mode=send_mode.get(); global_msg=fixed_msg_text.get("1.0",tk.END).strip()
     retry_max=get_retry_count()
     retry_queue=[]  # ✅ 재시도 대기열
 
+    # ✅ 다중 모드: 데이터가 비어있을 때만 자동 로드
+    if mode == "다중" and data.empty:
+        update_status("👥 다중 관리고객 데이터 로딩 중...")
+        load_multi_customer_from_excel()
+        if data.empty:
+            is_running=False; set_buttons_running(False)
+            update_status("데이터 로드 실패"); return
+
     # ── 1차 발송 ──
+    # ✅ 첫 발송 전 워밍업: 대상 사이트 창 활성화 + 모든 입력칸 포커스 확보
+    cfg_warmup = load_macro_config()
+    warmup_steps = [s for s in cfg_warmup.get("문자발송", []) if s.get("coord")]
+    if warmup_steps:
+        update_status("🔄 발송 준비 중... (대상 창 활성화)")
+        for ws in warmup_steps:
+            pyautogui.click(*ws["coord"])
+            time.sleep(0.3)
+        time.sleep(1.0)  # 사이트 안정화 대기
+        update_status("✅ 준비 완료 — 발송 시작")
+
     for idx in range(len(data)):
         if not is_running: break
         while is_paused: update_status(f"⏸ 일시정지 ({idx+1}번)"); time.sleep(0.3)
@@ -1267,16 +1667,36 @@ def sms_worker():
 
         row=data.iloc[idx]; phone=row["전화번호"]
         msg=global_msg if mode=="일괄" else row["발송문자"]
+
+        # ✅ 발송 미리보기 표시 + 긴급 정지 시간
+        total = len(data)
+        update_preview(idx, total, phone, msg, "발송 예정")
+        preview_wait = 2  # 미리보기 대기 (초) — 이 시간 안에 ⏸ 일시정지 가능
+        for sec in range(preview_wait, 0, -1):
+            if not is_running: break
+            if is_paused:
+                update_preview_countdown(0)
+                while is_paused:
+                    update_status(f"⏸ 일시정지 ({idx+1}번) — 미리보기 확인 중")
+                    time.sleep(0.3)
+                if not is_running: break
+            update_preview_countdown(sec)
+            time.sleep(1)
+        if not is_running: break
+        update_preview_countdown(0)
+
         ok=sms_send_one(idx,phone,msg)
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if ok:
             registered_indices.add(idx); write_log("발송성공",phone,msg)
             write_result_to_excel(idx,"발송성공")
             completion_times[idx] = now_str
+            update_preview(idx, total, phone, msg, "✅ 발송 완료")
         else:
-            retry_queue.append((idx,phone,msg))  # 실패 → 재시도 대기열
+            retry_queue.append((idx,phone,msg))
+            update_preview(idx, total, phone, msg, "❌ 발송 실패 → 재시도 대기")
         root.after(0,update_tables); root.after(0,update_progress)
-        save_session()  # ✅ 건별 자동 저장
+        save_session()
 
     # ── ✅ 실패 자동 재시도 ──
     for attempt in range(1, retry_max+1):
@@ -1323,6 +1743,7 @@ def sms_worker():
 
     save_session()
     is_running=False; set_buttons_running(False)
+    clear_preview()  # ✅ 미리보기 초기화
     retry_cnt=retry_max if retry_queue else 0
     write_usage_log("문자발송",f"성공{len(registered_indices)} 실패{len(failed_indices)}")
     update_status("전체 완료" if len(registered_indices)+len(failed_indices)>=len(data) else "중지됨")
@@ -1372,11 +1793,23 @@ def reset_all():
     global is_running,start_index,completion_times
     is_running=False; start_index=0
     registered_indices.clear(); failed_indices.clear(); completion_times.clear()
+    _multi_preview.clear(); update_table_headers_multi(False)  # ✅ 다중 모드 해제
     clear_session(); update_tables(); update_progress(); update_status("초기화 완료")
 
 def toggle_send_mode():
-    if send_mode.get()=="일괄": fixed_msg_text.config(state=tk.NORMAL,bg="#ffffff")
-    else: fixed_msg_text.config(state=tk.DISABLED,bg="#e9ecef")
+    m = send_mode.get()
+    if m == "일괄":
+        fixed_msg_text.config(state=tk.NORMAL, bg="#ffffff")
+        multi_info_label.pack_forget()
+        update_table_headers_multi(False)
+    elif m == "다중":
+        fixed_msg_text.config(state=tk.DISABLED, bg="#e9ecef")
+        multi_info_label.pack(fill=tk.X, pady=(4, 0))
+        update_table_headers_multi(True)
+    else:  # 개별
+        fixed_msg_text.config(state=tk.DISABLED, bg="#e9ecef")
+        multi_info_label.pack_forget()
+        update_table_headers_multi(False)
 
 def toggle_work_mode():
     m=get_current_mode()
@@ -1981,7 +2414,16 @@ def quick_send_action():
         msg = quick_msg_entry.get().strip()
         
         if not phone:
-            messagebox.showwarning("입력 오류", "발송할 연락처를 입력하세요.")
+            # ✅ 대기목록에 데이터가 있으면 올바른 버튼 안내
+            if not data.empty:
+                messagebox.showinfo("안내",
+                    f"발송 대기 목록에 {len(data)}건이 로드되어 있습니다.\n\n"
+                    f"대기 목록 전체를 발송하려면\n"
+                    f"아래쪽 [▶ 문자발송 실행] 버튼을 눌러주세요.\n\n"
+                    f"이 칸은 단건 즉시 발송용입니다.\n"
+                    f"(연락처와 문구를 직접 입력해서 1건만 보낼 때 사용)")
+            else:
+                messagebox.showwarning("입력 오류", "발송할 연락처를 입력하세요.")
             return
         if not msg:
             messagebox.showwarning("입력 오류", "발송할 문구를 입력하세요.")
@@ -2022,9 +2464,10 @@ def create_gui():
     global btn_coord_reset,filename_label,send_mode,fixed_msg_text,root
     global delay_var,batch_var,retry_var,progress_var,lbl_progress,status_var
     global work_mode,mode_frame,sms_opts_frame,reg_opts_frame
-    global tpl_var,tpl_dropdown,excel_writeback_var
+    global tpl_var,tpl_dropdown,excel_writeback_var,multi_info_label
     global manual_phone_entry, manual_msg_entry, quick_phone_entry, quick_msg_entry
     global smart_delay_var, use_limit_var, limit_var
+    global preview_text_widget, preview_info_label, preview_countdown_label
 
     root=tk.Tk(); root.title("📱 CIS 통합 매크로 — 번호등록 + 문자발송")
     
@@ -2107,6 +2550,11 @@ def create_gui():
     create_btn(f_row, "📂 엑셀 파일 선택", load_from_file_path, COLOR_INFO, COLOR_INFO_HOVER, font=FONT_BOLD_10).pack(side=tk.LEFT,expand=True,fill=tk.X,padx=3)
     create_btn(f_row, "💡 예시 데이터 로드", load_example_data, "#8b5cf6", "#7c3aed", font=FONT_BOLD_10).pack(side=tk.LEFT,expand=True,fill=tk.X,padx=3)
     
+    # Row 1.5: ✅ 다중 관리고객 SP담당자 문자발송
+    mc_row = tk.Frame(lf, bg=BG_CARD)
+    mc_row.pack(fill=tk.X, pady=(4, 4))
+    create_btn(mc_row, "👥 다중 관리고객 SP담당자 문자발송 (A:담당자 B:연락처 C:계약번호 D:상호 E:상태 F:월정료)", load_multi_customer_from_excel, "#dc2626", "#b91c1c", font=FONT_BOLD_10).pack(fill=tk.X,padx=3)
+    
     # Row 2: 수동 리스트 추가
     m_row = tk.Frame(lf, bg=BG_CARD)
     m_row.pack(fill=tk.X, pady=(4, 0))
@@ -2153,7 +2601,8 @@ def create_gui():
     
     send_mode=tk.StringVar(value="개별")
     tk.Radiobutton(st,text="🗂️ 개별문구 발송",variable=send_mode,value="개별",command=toggle_send_mode,font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,12))
-    tk.Radiobutton(st,text="📢 일괄문구 발송",variable=send_mode,value="일괄",command=toggle_send_mode,font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,20))
+    tk.Radiobutton(st,text="📢 일괄문구 발송",variable=send_mode,value="일괄",command=toggle_send_mode,font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,12))
+    tk.Radiobutton(st,text="👥 일괄 다중문구 발송",variable=send_mode,value="다중",command=toggle_send_mode,font=FONT_BOLD_10,bg=BG_CARD,fg="#dc2626",activebackground=BG_CARD,selectcolor=BG_CARD).pack(side=tk.LEFT,padx=(0,20))
     
     tk.Label(st,text="⏱️ 발송 딜레이:",font=FONT_BOLD_10,bg=BG_CARD,fg="#1e293b").pack(side=tk.LEFT,padx=(8,3))
     delay_var=tk.StringVar(value="3.0")
@@ -2219,6 +2668,13 @@ def create_gui():
     fixed_msg_text.pack(fill=tk.X,pady=(5,2))
     fixed_msg_text.insert(tk.END,"[KT텔레캅] 안녕하세요. 미결제금 확인 요청드립니다.")
     fixed_msg_text.config(state=tk.DISABLED,bg="#f1f5f9")
+
+    # ✅ 다중 모드 안내 라벨 (기본 숨김)
+    multi_info_label = tk.Label(sms_opts_frame,
+        text="👥 활성 엑셀 A~F열 자동 읽기 → 담당자별 다중 고객 문자 자동 생성\n"
+             "    A=담당자  B=연락처  C=계약번호  D=상호  E=상태  F=합산월정료",
+        font=FONT_BOLD_9, bg="#fef2f2", fg="#dc2626", anchor="w", justify="left",
+        padx=10, pady=6, bd=1, relief="solid")
 
     # 3. 단건 즉시 발송 (좌표 매크로)
     qf=tk.LabelFrame(root,text=" 3. 단건 즉시 발송 (좌표 매크로) ",font=FONT_BOLD_11,bg=BG_CARD,fg=COLOR_NAVY,bd=1,relief="solid",padx=15,pady=8)
@@ -2316,6 +2772,28 @@ def create_gui():
 
     left_table.bind("<Double-1>", on_left_double_click)
     right_table.bind("<Double-1>", on_right_double_click)
+
+    # ✅ 3.5 발송 미리보기 패널
+    preview_frame = tk.LabelFrame(root, text=" 📋 발송 미리보기 (실시간) ",
+                                  font=FONT_BOLD_11, bg=BG_CARD, fg="#dc2626",
+                                  bd=1, relief="solid", padx=10, pady=5)
+    preview_frame.pack(fill=tk.X, padx=20, pady=(3, 2))
+
+    pv_top = tk.Frame(preview_frame, bg=BG_CARD)
+    pv_top.pack(fill=tk.X, pady=(0, 3))
+
+    preview_info_label = tk.Label(pv_top, text="대기 중",
+                                  font=FONT_BOLD_10, bg=BG_CARD, fg="#1e293b", anchor="w")
+    preview_info_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    preview_countdown_label = tk.Label(pv_top, text="",
+                                       font=FONT_BOLD_10, bg=BG_CARD, fg="#dc2626")
+    preview_countdown_label.pack(side=tk.RIGHT, padx=5)
+
+    preview_text_widget = tk.Text(preview_frame, height=6, font=FONT_REG_10,
+                                  bd=1, relief="solid", padx=8, pady=5,
+                                  state=tk.DISABLED, bg="#fafafa", wrap=tk.WORD)
+    preview_text_widget.pack(fill=tk.X)
 
     # 4. 진행률 (Progress Bar)
     pf=tk.Frame(root,bg=BG_MAIN)
