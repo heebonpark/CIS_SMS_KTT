@@ -2837,22 +2837,26 @@ def create_gui():
                                   state=tk.DISABLED, bg="#fafafa", wrap=tk.WORD)
     preview_text_widget.pack(fill=tk.X)
 
-    # 4. 진행률 (Progress Bar)
+    # 4. 하단 유틸 및 진행률 패널
     pf=tk.Frame(root,bg=BG_MAIN)
     pf.pack(fill=tk.X,padx=20,pady=(5,3))
     
+    create_btn(pf, "📄 발송로그 열기", open_log_file, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=(0,3))
+    create_btn(pf, "📁 저장폴더 열기", open_log_folder, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
+    create_btn(pf, "📊 결과 엑셀 보고서 저장", export_results_to_excel, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
+    
     progress_var=tk.IntVar(value=0)
-    ttk.Progressbar(pf,variable=progress_var,maximum=100,length=400,style="TProgressbar").pack(side=tk.LEFT,fill=tk.X,expand=True,padx=(0,10))
+    ttk.Progressbar(pf,variable=progress_var,maximum=100,length=300,style="TProgressbar").pack(side=tk.LEFT,fill=tk.X,expand=True,padx=15)
     
     lbl_progress=tk.Label(pf,text="  완료 0 | 실패 0 | 남은 0  (0%)",font=FONT_BOLD_10,bg=BG_MAIN,fg=COLOR_PRIMARY)
     lbl_progress.pack(side=tk.RIGHT)
 
-    # 5. 컨트롤 패널
+    # 5. 메인 컨트롤 패널
     ct=tk.Frame(root,bg=BG_MAIN)
-    ct.pack(fill=tk.X,padx=20,pady=5)
+    ct.pack(fill=tk.X,padx=20,pady=(0,5))
     
     btn_start=create_btn(ct, "▶ 번호등록 실행", start_worker, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, width=16, font=FONT_BOLD_10)
-    btn_start.pack(side=tk.LEFT,padx=3)
+    btn_start.pack(side=tk.LEFT,padx=(0,3))
     
     btn_pause=create_btn(ct, "⏸ 일시정지", lambda:set_pause_state(True), "#f59e0b", "#d97706", font=FONT_BOLD_10, state=tk.DISABLED)
     btn_pause.pack(side=tk.LEFT,padx=2)
@@ -2873,15 +2877,7 @@ def create_gui():
     btn_coord_reset.pack(side=tk.LEFT,padx=3)
     
     create_btn(ct, "↺ 리스트 초기화", reset_all, "#94a3b8", "#64748b", font=FONT_BOLD_10).pack(side=tk.LEFT,padx=3)
-    create_btn(ct, "종료", root.destroy, COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10).pack(side=tk.RIGHT,padx=3)
-
-    # 6. 하단 로그 및 상태바
-    lgf=tk.Frame(root,bg=BG_MAIN)
-    lgf.pack(fill=tk.X,padx=20,pady=(2,5))
-    
-    create_btn(lgf, "📄 발송로그.txt 열기", open_log_file, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
-    create_btn(lgf, "📁 저장 폴더 열기", open_log_folder, "#64748b", "#475569", font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
-    create_btn(lgf, "📊 결과 엑셀 보고서 저장", export_results_to_excel, COLOR_SUCCESS, COLOR_SUCCESS_HOVER, font=FONT_BOLD_9).pack(side=tk.LEFT,padx=3)
+    create_btn(ct, "종료", root.destroy, COLOR_DANGER, COLOR_DANGER_HOVER, font=FONT_BOLD_10).pack(side=tk.RIGHT,padx=0)
 
     status_var=tk.StringVar(value="대기 중")
     tk.Label(root,textvariable=status_var,font=FONT_BOLD_9,bg="#cbd5e1",fg=COLOR_NAVY,anchor="w",padx=15,pady=5).pack(fill=tk.X,side=tk.BOTTOM)
