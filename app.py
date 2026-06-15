@@ -2520,8 +2520,6 @@ def create_gui():
     use_limit_var = tk.BooleanVar(value=cfg_settings.get("use_limit", False))
     limit_var = tk.StringVar(value=str(cfg_settings.get("daily_limit", 500)))
 
-    root = tk.Tk()
-    root.title("📱 CIS 통합 매크로 (세은아빠)")
     root.geometry("1200x800" if IS_MAC else "1200x840")
     root.configure(bg=BG_MAIN)
 
